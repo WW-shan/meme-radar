@@ -1,4 +1,5 @@
 import { chartRiskScreen } from './chart-risk.mjs';
+import { EntityGraph, entityMetrics } from './analytics/entity-graph.mjs';
 
 const NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 
@@ -562,6 +563,27 @@ export function deepScreen({ discovery, audit, nowMs = Date.now() }, config) {
   const lockRate = optionalRate(first(sec.lockRate, info.locked_ratio));
   const lpBurned = lower(sec.burnStatus) === 'burn';
   const wallets = analyzeWallets(audit.holders, config);
+  const entityGraph = new EntityGraph({ minCoBuyEvidence: 2 });
+  const holdRates = {};
+  for (const holder of Array.isArray(audit.holders) ? audit.holders : []) {
+    const address = normalizeAddress(holder?.address, config.chain);
+    if (!address) continue;
+    const rate = optionalRate(holder.amount_percentage);
+    if (rate !== null) holdRates[address] = rate;
+    const source = normalizeAddress(first(holder.native_transfer?.from_address, holder.native_transfer?.address), config.chain);
+    if (source) entityGraph.addFunding(address, source);
+  }
+  const walletAddresses = Object.keys(holdRates);
+  const entity = entityMetrics(entityGraph, walletAddresses, holdRates, { dataComplete: wallets.dataComplete });
+  const walletsWithEntities = {
+    ...wallets,
+    entityHoldRate: entity.entityHoldRate,
+    bundleHoldRate: entity.bundleHoldRate,
+    coBuyCount: entity.coBuyCount,
+    entityDataComplete: entity.entityDataComplete,
+    entityWalletCount: entity.entityWalletCount,
+    entityEvidence: entity.entityEvidence
+  };
   const observation = observeFiveMinutes(audit.candles, nowMs);
   const chartRisk = chartRiskScreen(audit.candles, nowMs);
   const marketBehavior = marketBehaviorScreen({
@@ -587,6 +609,7 @@ export function deepScreen({ discovery, audit, nowMs = Date.now() }, config) {
     wash: wash === false,
     liquidity: liquidityValue !== null && liquidity >= config.strictLiquidity,
     wallets: wallets.pass,
+    entityGraph: entity.entityDataComplete && entity.bundleHoldRate <= config.maxLinkedHoldRate,
     observation: observation.pass,
     chartRisk: chartRisk.pass,
     marketBehavior: marketBehavior.pass
@@ -613,6 +636,7 @@ export function deepScreen({ discovery, audit, nowMs = Date.now() }, config) {
     !lpBurned && lockRate === null ? 'lockRate' : null,
     liquidityValue === null ? 'liquidity' : null,
     ...wallets.unknownFields,
+    !entity.entityDataComplete ? 'entityGraph' : null,
     ...observation.unknownFields,
     ...chartRisk.unknownFields,
     ...(!isSol && honeypot !== false ? sellability.unknownFields : [])
@@ -635,12 +659,13 @@ export function deepScreen({ discovery, audit, nowMs = Date.now() }, config) {
     !lpBurned && lockRate === null ? 'lockRate' : null,
     liquidityValue === null ? 'liquidity' : null,
     ...wallets.unknownFields,
+    !entity.entityDataComplete ? 'entityGraph' : null,
     ...(observation.status === 'WAITING' ? observation.unknownFields : []),
     ...chartRisk.unknownFields,
     ...(!isSol && honeypot === null && !sellability.pass ? sellability.unknownFields : [])
   ].filter(Boolean);
   return {
-    chainPass, failed, checks, wallets, observation, chartRisk, marketBehavior, sellability, honeypotEvidence,
+    chainPass, failed, checks, wallets: walletsWithEntities, observation, chartRisk, marketBehavior, sellability, honeypotEvidence,
     unknownFields: [...new Set(unknownFields)],
     blockingUnknownFields: [...new Set(blockingUnknownFields)],
     security: {

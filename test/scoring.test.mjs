@@ -203,6 +203,10 @@ test('deep screen accepts strict chain data with empirical sell evidence and kno
   }, config);
   assert.equal(result.chainPass, true);
   assert.equal(result.honeypotEvidence, '经验卖出证据');
+  assert.equal(result.wallets.entityDataComplete, true);
+  assert.equal(result.wallets.bundleHoldRate, 0);
+  assert.equal(result.wallets.coBuyCount, 0);
+  assert.equal(result.checks.entityGraph, true);
 });
 
 test('deep screen reuses nested token-info dev and stat fields without another request', () => {
