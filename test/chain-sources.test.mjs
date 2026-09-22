@@ -50,6 +50,15 @@ test('Solana source reports UNCONFIGURED without an RPC or authority', async () 
   await assert.rejects(source.poll(), error => error.code === 'CHAIN_SOURCE_UNCONFIGURED');
 });
 
+test('Solana source uses until for forward polling and keeps the newest cursor', async () => {
+  const calls = [];
+  const rpc = { call: async (method, params) => { calls.push([method, params]); return { result: [] }; } };
+  const source = new SolanaEventSource({ rpc, migrationAuthority: 'AUTHORITY', programId: 'PROGRAM' });
+  const result = await source.poll({ until: 'newest-known-signature' });
+  assert.deepEqual(calls[0][1][1], { limit: 1000, until: 'newest-known-signature' });
+  assert.equal(result.cursor, 'newest-known-signature');
+});
+
 test('EVM source unwraps result, filters factory/topic, decodes token and deduplicates logs', async () => {
   const calls = [];
   const factory = {

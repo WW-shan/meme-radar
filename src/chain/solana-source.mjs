@@ -40,11 +40,14 @@ export class SolanaEventSource {
     return Boolean(this.rpc?.call && this.migrationAuthority && this.programId);
   }
 
-  async poll({ before = '', limit = 1000 } = {}) {
+  async poll({ before = '', until = '', limit = 1000 } = {}) {
     if (!this.configured()) {
       throw Object.assign(new Error('Solana chain source is not configured'), { code: 'CHAIN_SOURCE_UNCONFIGURED' });
     }
-    const payload = await this.rpc.call('getSignaturesForAddress', [this.migrationAuthority, { before, limit }]);
+    const options = { limit };
+    if (before) options.before = before;
+    if (until) options.until = until;
+    const payload = await this.rpc.call('getSignaturesForAddress', [this.migrationAuthority, options]);
     const rows = unwrap(payload) || [];
     const unique = new Map();
     for (const row of rows) if (row?.signature && !unique.has(row.signature)) unique.set(row.signature, row);
@@ -59,9 +62,10 @@ export class SolanaEventSource {
       });
       if (event) events.push(event);
     }
+    const newest = unique.keys().next().value || until || before;
     return {
       events,
-      cursor: rows.at(-1)?.signature || before,
+      cursor: newest,
       hasMore: rows.length === limit
     };
   }

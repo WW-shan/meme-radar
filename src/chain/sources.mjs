@@ -28,7 +28,7 @@ export function createChainEventSources(config = {}, { fetchImpl = globalThis.fe
     name: 'solana-migration',
     read: async chain => {
       if (chain !== 'sol') throw unconfigured('Solana source only supports sol');
-      const result = await solana.poll({ before: solanaCursor });
+      const result = await solana.poll({ until: solanaCursor });
       if (result.cursor) solanaCursor = result.cursor;
       return { stage: 'migrated', rows: discoveryRows(result.events) };
     }
