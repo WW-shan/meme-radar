@@ -40,7 +40,10 @@ export class EvmEventSource {
       for (const log of logs) {
         if (!sameHex(log?.address, factory.address) || !sameHex(log?.topics?.[0], factory.topic)) continue;
         const decoded = typeof factory.decode === 'function' ? factory.decode(log) : null;
-        const tokenAddress = String(decoded?.tokenAddress || '');
+        const topicIndex = Number.isInteger(factory.tokenTopicIndex) ? factory.tokenTopicIndex : 1;
+        const topicValue = String(log?.topics?.[topicIndex] || '');
+        const inferred = /^0x[0-9a-f]{64}$/i.test(topicValue) ? `0x${topicValue.slice(-40)}` : '';
+        const tokenAddress = String(decoded?.tokenAddress || inferred);
         if (!/^0x[0-9a-f]{40}$/i.test(tokenAddress)) continue;
         const key = `${String(log.transactionHash).toLowerCase()}:${String(log.logIndex).toLowerCase()}`;
         if (seen.has(key)) continue;

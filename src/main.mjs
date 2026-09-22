@@ -14,6 +14,7 @@ import { configureWindowsSystemProxy } from './windows-proxy.mjs';
 import { createChainEventSources } from './chain/sources.mjs';
 import { CreatorReputation } from './analytics/creator-reputation.mjs';
 import { RiskMemory } from './analytics/risk-memory.mjs';
+import { EventStore } from './evaluation/event-store.mjs';
 
 // Browsers use the Windows system proxy automatically, while Node normally
 // only sees proxy environment variables. Mirror the effective Windows proxy
@@ -40,7 +41,8 @@ const gmgn = new GmgnClient({
 if (keyStore.disconnected()) gmgn.resetCredentials({ disabled: true });
 gmgn.nextAllowedAt = Math.max(0, Number(state.value.retryAt) || 0);
 const controls = new RadarControls(config.stateDir, config.supportedChains, state.value.activeChain || config.chain);
-const scanner = new Scanner({ gmgn, secondary: new SecondaryValidator(), state, controls, chainSources: createChainEventSources(config), creatorReputation: new CreatorReputation(state.value.creatorHistory || []), riskMemory: new RiskMemory(state.value.riskMemory || state.value.riskExclusions || {}) });
+const eventStore = new EventStore(config.stateDir);
+const scanner = new Scanner({ gmgn, secondary: new SecondaryValidator(), state, controls, chainSources: createChainEventSources(config), creatorReputation: new CreatorReputation(state.value.creatorHistory || []), riskMemory: new RiskMemory(state.value.riskMemory || state.value.riskExclusions || {}), eventStore });
 const connection = new GmgnConnection({ gmgn, keyStore, scanner });
 const liveDiscovery = new LiveDiscovery({ gmgn });
 

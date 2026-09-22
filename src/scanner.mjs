@@ -6,7 +6,7 @@ import { socialGate } from './social.mjs';
 import { tokenInfoPrice } from './gmgn.mjs';
 import { collectOutcomeSamples, createOutcome, dueOutcomeJobs, outcomeCoverage, sampleRejected, updateOutcomePath } from './outcomes.mjs';
 import { tokenKey } from './local-store.mjs';
-import { DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
+import { DISCOVERY_SOURCE, DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
 import { productCapabilities } from './product/mode.mjs';
 import { scoreRisk } from './analytics/risk-engine.mjs';
 import { RiskMemory } from './analytics/risk-memory.mjs';
@@ -503,12 +503,13 @@ function addEvent(events, type, message, chain, data = {}) {
 }
 
 export class Scanner {
-  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [], creatorReputation = null, riskMemory = null }) {
+  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [], creatorReputation = null, riskMemory = null, eventStore = null }) {
     this.gmgn = gmgn;
     this.secondary = secondary;
     this.chainSources = chainSources;
     this.creatorReputation = creatorReputation;
     this.riskMemory = riskMemory;
+    this.eventStore = eventStore;
     this.state = state;
     this.controls = controls;
     this.config = settings;
@@ -537,6 +538,43 @@ export class Scanner {
     );
     sources.push(...(this.chainSources || []));
     return sources;
+  }
+
+  async persistDiscoveryEvents(discoveryResult, chain) {
+    if (!this.eventStore) return 0;
+    let count = 0;
+    for (const [stage, rows] of Object.entries(discoveryResult.byStage || {})) {
+      for (const row of rows) {
+        if (!row?.address) continue;
+        const observedAt = Number(row.observedAt || row.updated_at || row.open_timestamp * 1000 || row.creation_timestamp * 1000 || Date.now());
+        try {
+          await this.eventStore.append({
+            source: row[DISCOVERY_SOURCE] || 'discovery',
+            chain,
+            stage,
+            token: { address: String(row.address), symbol: String(row.symbol || ''), name: String(row.name || '') },
+            observedAt,
+            raw: row.rawDiscovery && typeof row.rawDiscovery === 'object' ? row.rawDiscovery
+              : row.raw && typeof row.raw === 'object' ? row.raw : row,
+            normalized: row.normalized && typeof row.normalized === 'object' ? row.normalized : {
+              symbol: row.symbol ?? null,
+              name: row.name ?? null,
+              marketCap: numberOrNull(first(row.market_cap, row.usd_market_cap, row.mcp)),
+              liquidity: numberOrNull(row.liquidity),
+              price: numberOrNull(first(row.price, row.price_usd, row.usd_price)),
+              volume1h: numberOrNull(first(row.volume_1h, row.volume)),
+              holderCount: numberOrNull(row.holder_count)
+            }
+          });
+          count++;
+        } catch (error) {
+          throw Object.assign(new Error('发现事件未能写入append-only存储，本轮停止以避免伪造完整结果'), {
+            code: 'EVENT_STORE_WRITE_FAILED', cause: error
+          });
+        }
+      }
+    }
+    return count;
   }
 
   activateChain(chain, quiet = false) {
@@ -651,7 +689,13 @@ export class Scanner {
 
       const discoveryResult = await new DiscoveryOrchestrator(this.discoverySources()).run(chain);
       if (this.gmgn.keyEpoch !== keyEpoch) return;
+      await this.persistDiscoveryEvents(discoveryResult, chain);
       this.lastDiscoveryStages = discoveryResult.byStage;
+      const gmgnSourceHealth = Object.entries(discoveryResult.health)
+        .filter(([name]) => name.startsWith('gmgn-'));
+      const gmgnUsable = gmgnConfigured && gmgnSourceHealth.some(([, health]) => health.status === 'OK');
+      const gmgnUnavailableCode = gmgnSourceHealth.find(([, health]) => health.status !== 'OK')?.[1]?.code
+        || (gmgnConfigured ? 'GMGN_SOURCE_UNAVAILABLE' : 'GMGN_AUTH_REQUIRED');
       const lifecycle = new LifecycleTracker(prior.lifecycle || []);
       for (const [stage, rows] of Object.entries(discoveryResult.byStage)) {
         if (!Object.hasOwn(LIFECYCLE_ORDER, stage)) continue;
@@ -729,11 +773,11 @@ export class Scanner {
       let auditHadError = false;
       let auditsCompleted = 0;
 
-      if (!gmgnConfigured) {
+      if (!gmgnUsable) {
         const checkedAt = Date.now();
         lastAuditHealth = {
           available: false, complete: false, status: 'UNAVAILABLE',
-          code: 'GMGN_AUTH_REQUIRED', checkedAt, endpoints: {}
+          code: gmgnUnavailableCode, checkedAt, endpoints: {}
         };
         auditHadError = true;
         for (const item of prequalified) {
@@ -772,7 +816,7 @@ export class Scanner {
         }
       }
 
-      for (const queued of gmgnConfigured ? selected : []) {
+      for (const queued of gmgnUsable ? selected : []) {
         if (auditsCompleted && Date.now() - startedAt >= (settings.auditCycleBudgetMs || 80_000)) break;
         if (this.gmgn.nextAllowedAt > Date.now() || this.gmgn.disabled) break;
         const item = auditable.find(entry => addressKey(entry.row.address) === addressKey(queued.address));
@@ -980,8 +1024,8 @@ export class Scanner {
         ...prior,
         version: 2,
         status: degraded ? 'DEGRADED' : 'RUNNING',
-        authMessage: gmgnConfigured ? '' : 'GMGN只读数据源不可用；直接链上事件仍会保留，深度字段为 UNAVAILABLE。',
-        error: degraded ? gmgnConfigured
+        authMessage: gmgnUsable ? '' : 'GMGN只读数据源不可用；直接链上事件仍会保留，深度字段为 UNAVAILABLE。',
+        error: degraded ? gmgnUsable
           ? '本轮部分数据不完整，系统会自动复查；页面不会把未知值当作安全。'
           : 'GMGN深度审计不可用；直接链上事件不会被视为安全或通过。'
           : '',

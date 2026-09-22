@@ -1,6 +1,7 @@
 import { sourceHealthRecord, summarizeSourceHealth } from './source-health.mjs';
 
 const STAGES = Object.freeze(['new_creation', 'near_completion', 'completed', 'migrated', 'signal']);
+export const DISCOVERY_SOURCE = Symbol('discoverySource');
 
 function addressKey(chain, value) {
   const address = String(value ?? '').trim();
@@ -29,6 +30,11 @@ export class DiscoveryOrchestrator {
           const key = addressKey(chain, row.address);
           if (seen[result.stage].has(key)) continue;
           seen[result.stage].add(key);
+          try {
+            Object.defineProperty(row, DISCOVERY_SOURCE, {
+              value: source.name, enumerable: false, configurable: true
+            });
+          } catch {}
           byStage[result.stage].push(row);
         }
         health[source.name] = sourceHealthRecord({

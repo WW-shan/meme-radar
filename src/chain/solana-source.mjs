@@ -53,7 +53,7 @@ export class SolanaEventSource {
       const txPayload = await this.rpc.call('getTransaction', [row.signature, {
         encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: this.commitment
       }]);
-      const transaction = Array.isArray(txPayload) ? txPayload[0] : txPayload?.result;
+      const transaction = Array.isArray(txPayload) ? txPayload[0] : txPayload?.result ?? txPayload;
       const event = parseSolanaMigrationTransaction(transaction, {
         programId: this.programId, signature: row.signature, slot: row.slot, blockTime: row.blockTime
       });

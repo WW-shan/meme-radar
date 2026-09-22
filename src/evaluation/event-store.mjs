@@ -59,7 +59,14 @@ export class EventStore {
     return row;
   }
 
-  async read({ chain = '', stage = '' } = {}) {
+  async read({ chain = '', stage = '', from = null, to = null } = {}) {
+    const hasFrom = from !== null && from !== undefined;
+    const hasTo = to !== null && to !== undefined;
+    const fromAt = hasFrom ? Number(from) : -Infinity;
+    const toAt = hasTo ? Number(to) : Infinity;
+    if (hasFrom && !Number.isFinite(fromAt) || hasTo && !Number.isFinite(toAt) || toAt < fromAt) {
+      throw Object.assign(new Error('invalid event query range'), { code: 'INVALID_EVENT_QUERY' });
+    }
     const rows = [];
     for (const name of fs.readdirSync(this.directory).filter(name => name.endsWith('.ndjson')).sort()) {
       const file = path.join(this.directory, name);
@@ -73,6 +80,7 @@ export class EventStore {
         }
         if (chain && row.chain !== chain) continue;
         if (stage && row.stage !== stage) continue;
+        if (row.observedAt < fromAt || row.observedAt > toAt) continue;
         rows.push(row);
       }
     }

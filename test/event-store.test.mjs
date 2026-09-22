@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventStore } from '../src/evaluation/event-store.mjs';
 import { RadarState } from '../src/state.mjs';
+import { Scanner } from '../src/scanner.mjs';
+import { config } from '../src/config.mjs';
 
 const temporary = t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-events-'));
@@ -77,4 +79,44 @@ test('state migrates v2 to v4 without dropping existing data', t => {
   assert.equal(state.value.scanCount, 7);
   assert.equal(state.value.candidates[0].address, 'A');
   assert.deepEqual(state.value.events, []);
+});
+
+test('scanner persists every staged discovery event and queries it by time and stage', async t => {
+  const dir = temporary(t);
+  const store = new EventStore(dir);
+  const state = new RadarState(path.join(dir, 'state'));
+  state.value.activeChain = 'bsc';
+  const observedAt = 1_800_000_000_000;
+  const row = {
+    address: '0x' + '2'.repeat(40),
+    symbol: 'EVENT',
+    observedAt,
+    raw: { rank: 1 },
+    normalized: { rank: 1, liquidityUsd: 4_000 }
+  };
+  const gmgn = {
+    keyEpoch: 0,
+    nextAllowedAt: 0,
+    disabled: false,
+    metrics: { requests: 0, cacheHits: 0, rateLimits: 0 },
+    configured: async () => true,
+    discover: async () => [],
+    audit: async () => { throw new Error('event-only row must not be deep-audited in this test'); }
+  };
+  const scanner = new Scanner({
+    gmgn,
+    state,
+    eventStore: store,
+    settings: { ...config, chain: 'bsc' },
+    chainSources: [{ name: 'chain-new', read: async () => ({ stage: 'new_creation', rows: [row] }) }]
+  });
+
+  await scanner.cycle();
+
+  const rows = await store.read({ chain: 'bsc', stage: 'new_creation', from: observedAt, to: observedAt });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].source, 'chain-new');
+  assert.equal(rows[0].token.address, row.address);
+  assert.deepEqual(rows[0].raw, row.raw);
+  assert.deepEqual(rows[0].normalized, row.normalized);
 });

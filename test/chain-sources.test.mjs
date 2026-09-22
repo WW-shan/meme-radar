@@ -88,3 +88,59 @@ test('chain source factory stays disabled by default and reports UNCONFIGURED wh
   assert.equal(result.summary.complete, false);
   assert.equal(result.summary.unconfigured, true);
 });
+
+test('configured Solana and EVM sources emit orchestrator-ready rows through the real RPC client', async () => {
+  const solConfig = {
+    chainEventsEnabled: true,
+    solanaRpcUrl: 'https://sol-rpc.example',
+    solanaMigrationAuthority: 'MIGRATION_AUTHORITY',
+    solanaMigrationProgram: 'MIGRATION_PROGRAM'
+  };
+  const solFetch = async (_url, request) => {
+    const { method, params } = JSON.parse(request.body);
+    const result = method === 'getSignaturesForAddress'
+      ? fixture.signatures
+      : fixture.transactions[params[0]] || null;
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+  };
+  const solResult = await new DiscoveryOrchestrator(
+    createChainEventSources(solConfig, { fetchImpl: solFetch })
+  ).run('sol');
+  assert.equal(solResult.byStage.migrated.length, 1);
+  assert.equal(solResult.byStage.migrated[0].address, 'So11111111111111111111111111111111111111112');
+  assert.equal(solResult.health['solana-migration'].status, 'OK');
+
+  const factory = {
+    address: '0x1111111111111111111111111111111111111111',
+    topic: '0x' + 'aa'.repeat(32)
+  };
+  const evmConfig = {
+    chainEventsEnabled: true,
+    evmRpcUrls: { bsc: 'https://bsc-rpc.example' },
+    evmFactories: { bsc: [factory] }
+  };
+  const evmCalls = [];
+  const evmFetch = async (_url, request) => {
+    const { method, params } = JSON.parse(request.body);
+    evmCalls.push([method, params]);
+    const result = method === 'eth_blockNumber' ? '0x10' : [{
+      address: factory.address,
+      topics: [factory.topic, '0x' + '2'.repeat(64)],
+      transactionHash: '0xtx1', blockNumber: '0x10', logIndex: '0x0'
+    }];
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+  };
+  const evmResult = await new DiscoveryOrchestrator(
+    createChainEventSources(evmConfig, { fetchImpl: evmFetch })
+  ).run('bsc');
+  assert.equal(evmResult.byStage.new_creation.length, 1);
+  assert.equal(evmResult.byStage.new_creation[0].address.toLowerCase(), '0x' + '2'.repeat(40));
+  assert.deepEqual(evmCalls[0], ['eth_blockNumber', []]);
+  assert.deepEqual(evmCalls[1], ['eth_getLogs', [{
+    address: factory.address, fromBlock: '0x0', toBlock: '0x10', topics: [factory.topic]
+  }]]);
+});

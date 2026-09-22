@@ -128,6 +128,51 @@ test('GMGN failure keeps direct chain events alive with deep data explicitly una
   assert.equal(state.value.status, 'DEGRADED');
 });
 
+test('a configured but incompatible GMGN client falls back without attempting deep audits', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-gmgn-incompatible-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const state = new RadarState(directory);
+  state.value.activeChain = 'bsc';
+  const nowSec = Date.now() / 1000;
+  const row = {
+    address: '0x' + '8'.repeat(40),
+    symbol: 'INCOMPATIBLE',
+    market_cap: 50_000,
+    creation_timestamp: nowSec - 3_600,
+    liquidity: 10_000,
+    rug_ratio: 0.1,
+    bundler_rate: 0.1,
+    rat_trader_amount_rate: 0.1,
+    is_wash_trading: false,
+    is_honeypot: false
+  };
+  let audits = 0;
+  const gmgn = {
+    keyEpoch: 0,
+    nextAllowedAt: 0,
+    disabled: false,
+    metrics: { requests: 0, cacheHits: 0, rateLimits: 0 },
+    configured: async () => true,
+    discover: async () => { throw Object.assign(new Error('missing method'), { code: GMGN_ADAPTER_INCOMPATIBLE }); },
+    audit: async () => { audits++; throw new Error('incompatible GMGN must not be audited'); }
+  };
+  const scanner = new Scanner({
+    gmgn,
+    state,
+    settings: { ...config, chain: 'bsc', maxDeepAuditsPerCycle: 1 },
+    chainSources: [{ name: 'evm-bsc-pool', read: async () => ({ stage: 'completed', rows: [row] }) }]
+  });
+
+  await scanner.cycle();
+
+  const candidate = state.value.candidates.find(item => item.address === row.address);
+  assert.ok(candidate);
+  assert.equal(audits, 0);
+  assert.equal(candidate.deep.availability, 'UNAVAILABLE');
+  assert.equal(candidate.auditHealth.code, GMGN_ADAPTER_INCOMPATIBLE);
+  assert.equal(state.value.status, 'DEGRADED');
+});
+
 test('setup --check prints adapter status, missing methods and fallback sources', async () => {
   const { stdout } = await exec(process.execPath, ['scripts/setup.mjs', '--check'], {
     cwd: root,
