@@ -341,6 +341,19 @@ export function summarizeOutcomes(outcomes) {
     }];
   }));
   const completed = Object.fromEntries(Object.keys(OUTCOME_WINDOWS).map(key => [key, rows.filter(item => item.samples?.[key]).length]));
+  const estimatedValues = rows.flatMap(item => Object.values(item.samples || {})
+    .map(sample => numberOrNull(sample?.estimatedNetReturn))).filter(value => value !== null);
+  const estimatedNetReturn = estimatedValues.length ? estimatedValues.reduce((sum, value) => sum + value, 0) / estimatedValues.length : null;
+  const executionEstimates = Object.fromEntries(Object.keys(OUTCOME_WINDOWS).map(key => {
+    const values = rows.map(item => numberOrNull(item.samples?.[key]?.estimatedNetReturn)).filter(value => value !== null);
+    return [key, {
+      observedReturn: observedResults[key]?.average ?? null,
+      estimatedNetReturn: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
+      status: values.length ? 'ESTIMATED' : 'UNKNOWN',
+      executionReady: false,
+      readOnly: true
+    }];
+  }));
   const pathRows = rows.filter(item => item.path && Array.isArray(item.path.observations));
   const completePaths = pathRows.filter(item => item.path.coverage?.complete === true).length;
   const maxDrawdowns = pathRows.map(item => numberOrNull(item.path.maxDrawdown)).filter(value => value !== null);
@@ -376,6 +389,11 @@ export function summarizeOutcomes(outcomes) {
     averageReturn1h: average('h1'),
     averageReturn2h: average('h2'),
     averageReturn24h: average('h24'),
+    observedReturn: average('m30'),
+    estimatedNetReturn,
+    executionReady: false,
+    readOnly: true,
+    executionEstimates,
     note: '影子验证，仅衡量筛选结果，不代表可成交收益',
     observedResults,
     pathRisk,

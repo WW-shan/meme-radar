@@ -390,6 +390,8 @@ function publicOutcomeSample(sample) {
     source: text(sample.source, 32),
     price: finiteOrNull(sample.price),
     return: finiteOrNull(sample.return),
+    observedReturn: finiteOrNull(sample.return ?? sample.observedReturn),
+    estimatedNetReturn: finiteOrNull(sample.estimatedNetReturn),
     liquidityUsd: finiteOrNull(sample.liquidityUsd),
     volume5m: finiteOrNull(sample.volume5m),
     sells5m: finiteOrNull(sample.sells5m),
@@ -472,8 +474,25 @@ function publicOutcomeRow(row = {}, chain = '') {
       failedReads: finite(path.failedReads),
       complete: completed === OUTCOME_HORIZONS.length
     },
+    observedReturn: observedResults.m30?.observedReturn ?? null,
+    estimatedNetReturn: observedResults.m30?.estimatedNetReturn ?? null,
+    executionReady: false,
+    readOnly: true,
     samples: observedResults
   };
+}
+
+function publicExecutionEstimates(source = {}) {
+  return Object.fromEntries(OUTCOME_HORIZONS.map(key => {
+    const row = source?.[key] || {};
+    return [key, {
+      observedReturn: finiteOrNull(row.observedReturn),
+      estimatedNetReturn: finiteOrNull(row.estimatedNetReturn),
+      status: text(row.status, 24) || 'UNKNOWN',
+      executionReady: false,
+      readOnly: true
+    }];
+  }));
 }
 
 function publicOutcomeSummary(source = {}) {
@@ -491,6 +510,11 @@ function publicOutcomeSummary(source = {}) {
     averageReturn2h: finiteOrNull(source.averageReturn2h),
     averageReturn24h: finiteOrNull(source.averageReturn24h),
     note: text(source.note, 160),
+    observedReturn: finiteOrNull(source.observedReturn),
+    estimatedNetReturn: finiteOrNull(source.estimatedNetReturn),
+    executionReady: false,
+    readOnly: true,
+    executionEstimates: publicExecutionEstimates(source.executionEstimates),
     observedResults: publicObservedResults(source.observedResults),
     pathRisk: publicPathRisk(source.pathRisk),
     sampleCoverage,

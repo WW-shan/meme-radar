@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { estimateExecution } from './execution-model.mjs';
 
 export const horizons = Object.freeze({ m5: 300_000, m15: 900_000, m30: 1800_000, h1: 3600_000, h2: 7200_000, h6: 21600_000, h24: 86400_000 });
 export const OUTCOME_PATH_VERSION = 'outcome-path-v1';
@@ -34,6 +35,7 @@ function normalizeObservation(input, baselinePrice) {
     collectedAt: numberOrNull(input.collectedAt, 0),
     price,
     return: failedRead || baselinePrice === null || price === null ? null : price / baselinePrice - 1,
+    estimatedNetReturn: numberOrNull(input.estimatedNetReturn),
     liquidityUsd: numberOrNull(input.liquidityUsd, 0),
     volume5m: numberOrNull(input.volume5m, 0),
     sells5m: numberOrNull(input.sells5m, 0),
@@ -89,6 +91,25 @@ function baselineObservation(row) {
     failedRead: false,
     kind: 'BASELINE'
   }, baselinePrice);
+}
+
+export function estimateOutcomeExecution(sample = {}, assumptions = {}) {
+  const observedReturn = numberOrNull(sample.return ?? sample.observedReturn);
+  const sells5m = numberOrNull(sample.sells5m, 0);
+  const execution = estimateExecution({
+    notionalUsd: assumptions.notionalUsd,
+    liquidityUsd: sample.liquidityUsd,
+    feeRate: assumptions.feeRate,
+    priorityUsd: assumptions.priorityUsd,
+    mevReserveRate: assumptions.mevReserveRate,
+    exitLiquidityUsd: sample.exitLiquidityUsd ?? sample.liquidityUsd,
+    exitDataReliable: sample.exitDataReliable === true || sells5m !== null
+  });
+  return {
+    observedReturn,
+    estimatedNetReturn: execution.estimatedNetReturn,
+    execution
+  };
 }
 
 export function createOutcome({
