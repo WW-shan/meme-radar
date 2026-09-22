@@ -28,6 +28,18 @@ export class EventStore {
   }
 
   idsFor(file) {
+    const entry = this.loadIds(file);
+    // Only the file being appended to needs an index. Keeping an entry per day
+    // would grow without bound in a long-running process, and re-reading an
+    // older file on demand is still correct.
+    if (this.index.size > 1) {
+      this.index.clear();
+      this.index.set(file, entry);
+    }
+    return entry;
+  }
+
+  loadIds(file) {
     const stat = fs.statSync(file, { throwIfNoEntry: false });
     const cached = this.index.get(file);
     if (!stat) {

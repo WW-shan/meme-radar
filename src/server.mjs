@@ -127,7 +127,8 @@ export function voiceSnapshot(state, enabledChains) {
   const scopes = { ...chainStates, [current.activeChain]: current };
   const chains = Array.isArray(enabledChains) ? enabledChains : [];
   return { chains: Object.fromEntries(chains.filter(chain => CHAIN_IDS.has(chain)).map(chain => [chain,
-    (scopes[chain]?.candidates || []).filter(row => row && typeof row === 'object').slice(0, 200).map(row => ({ chain, address: text(row.address, 80),
+    (Array.isArray(scopes[chain]?.candidates) ? scopes[chain].candidates : [])
+      .filter(row => row && typeof row === 'object').slice(0, 200).map(row => ({ chain, address: text(row.address, 80),
       status: text(row.status, 32), auditedAt: finite(row.auditedAt), staleAt: finite(row.staleAt),
       qualified: row.status === 'X_REVIEW' && row.deep?.chainPass === true && !row.auditError
         && row.auditHealth?.complete !== false && row.deep?.chartRisk?.pass === true

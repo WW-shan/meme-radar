@@ -248,3 +248,24 @@ test('discovery events never trust zero, seconds-less or implausible future time
   assert.equal(bySymbol.T4, Math.floor(startedAt / 1000) * 1000, 'second-precision timestamps stay supported');
   assert.ok(rows.every(entry => entry.observedAt <= Date.now()), 'stored observations must never be future dated');
 });
+
+test('event store keeps its in-memory index bounded to the active day file', async t => {
+  const dir = temporary(t);
+  const store = new EventStore(dir);
+  const row = (observedAt, index) => ({
+    source: 'bounded', chain: 'bsc', stage: 'new_creation',
+    token: { address: `0x${String(index).padStart(40, '0')}` },
+    observedAt, raw: { index }, normalized: { index }
+  });
+  const firstDay = 1_700_000_000_000;
+  const secondDay = 1_700_100_000_000;
+
+  await store.append(row(firstDay, 0));
+  await store.append(row(secondDay, 1));
+  assert.equal(store.index.size, 1, 'a long-running process must not keep every day file indexed');
+
+  await store.append(row(firstDay, 0));
+  const lines = fs.readFileSync(store.file(firstDay), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 1, 'dedupe must survive index pruning');
+  assert.equal(store.index.size, 1);
+});

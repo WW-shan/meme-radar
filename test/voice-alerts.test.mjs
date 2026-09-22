@@ -137,3 +137,14 @@ test('exact static routes serve voice modules, keep CSP, exclude recordings and 
   assert.match(ui, /addEventListener\('storage'/); assert.match(ui, /navigator\.locks\.request/);
   assert.match(ui, /if \(player.playing \|\| state === 'loading'\) return/);
 });
+
+test('voice snapshot survives malformed persisted chain state', () => {
+  const snapshot = voiceSnapshot({
+    activeChain: 'eth',
+    chainStates: { bsc: { candidates: { not: 'an array' } }, sol: { candidates: null } },
+    riskExclusions: {}
+  }, ['bsc', 'sol']);
+  assert.deepEqual(snapshot.chains.bsc, []);
+  assert.deepEqual(snapshot.chains.sol, []);
+  assert.deepEqual(voiceSnapshot(null, null).chains, {});
+});
