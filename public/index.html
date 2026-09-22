@@ -789,8 +789,10 @@
           <div class="outcome-item"><label data-i18n="result1h">1小时结果</label><strong id="outcome1h" data-i18n="none">暂无</strong><small id="outcome1hCount" data-i18n="completedZero">完成0个样本</small></div>
           <div class="outcome-item"><label data-i18n="result2h">2小时结果</label><strong id="outcome2h" data-i18n="none">暂无</strong><small id="outcome2hCount" data-i18n="completedZero">完成0个样本</small></div>
           <div class="outcome-item"><label data-i18n="result24h">24小时结果</label><strong id="outcome24h" data-i18n="none">暂无</strong><small id="outcome24hCount" data-i18n="completedZero">完成0个样本</small></div>
+          <div class="outcome-item"><label data-i18n="observedReturn">观察收益</label><strong id="outcomeObserved" data-i18n="none">暂无</strong><small data-i18n="observedReturnNote">仅按观察价格计算，不代表可成交收益</small></div>
+          <div class="outcome-item"><label data-i18n="estimatedNetReturn">估算净收益</label><strong id="outcomeEstimated" data-i18n="none">暂无</strong><small data-i18n="estimatedReturnNote">只读成本估算，不代表实际收益或可执行交易</small></div>
         </div>
-        <div id="outcomeGate" class="sample-gate" data-i18n="sampleGate">调参门槛：30分钟、2小时或24小时的完成样本均需满50个；未满50个只做观察，不用于调参。</div>
+        <div id="outcomeGate" class="sample-gate" data-i18n="sampleGate">校准门槛：至少500个平衡样本且ECE不高于10%；50个样本仅表示可开始观察。</div>
         <div id="outcomeCoverage" class="manage-body muted"></div>
       </article>
 
@@ -1014,13 +1016,22 @@
       shadowDisclaimer: ['影子观察，不代表可成交收益，也不作为交易指令', '影子觀察，不代表可成交收益，也不作為交易指令', 'Shadow tracking only; not executable return or a trade instruction', '影子追跡のみ。約定可能な収益や取引指示ではありません', '영자 관찰용이며 실제 수익·거래 지시가 아닙니다', 'تتبع ظلي فقط؛ لا يمثل عائدًا قابلًا للتنفيذ أو أمر تداول'],
       trackedSamples: ['跟踪样本', '追蹤樣本', 'Tracked samples', '追跡サンプル', '추적 표본', 'العينات المتتبعة'],
       historicalObservations: ['历史候选观察数', '歷史候選觀察數', 'Historical candidate observations', '過去の候補観測数', '역사적 후보 관찰 수', 'عدد مراقبات المرشحين'],
+      observedReturn: ['观察收益', '觀察收益', 'Observed return', '観測リターン', '관찰 수익률', 'العائد المرصود'],
+      observedReturnNote: ['仅按观察价格计算，不代表可成交收益', '僅按觀察價格計算，不代表可成交收益', 'Price observation only; not executable return', '観測価格のみ。約定可能な収益ではありません', '관찰 가격 기준이며 실제 수익이 아닙니다', 'مراقبة السعر فقط؛ ليست عائدًا قابلًا للتنفيذ'],
+      estimatedNetReturn: ['估算净收益', '估算淨收益', 'Estimated net return', '推定純収益', '추정 순수익률', 'العائد الصافي المقدّر'],
+      estimatedReturnNote: ['只读成本估算，不代表实际收益或可执行交易', '唯讀成本估算，不代表實際收益或可執行交易', 'Read-only cost estimate; not actual return or an executable trade', '読み取り専用コスト推定。実収益や約定可能な取引ではありません', '읽기 전용 비용 추정이며 실제 수익이나 거래가 아닙니다', 'تقدير تكلفة للقراءة فقط؛ ليس عائدًا فعليًا أو صفقة قابلة للتنفيذ'],
+      riskSummary: ['风险{score} · 置信{confidence} · {band}', '風險{score} · 置信{confidence} · {band}', 'Risk {score} · confidence {confidence} · {band}', 'リスク{score}・信頼度{confidence}・{band}', '위험 {score} · 신뢰도 {confidence} · {band}', 'الخطر {score} · الثقة {confidence} · {band}'],
+      coverageSummary: ['数据覆盖：{coverage}', '資料覆蓋：{coverage}', 'Coverage: {coverage}', 'データ範囲：{coverage}', '데이터 범위: {coverage}', 'التغطية: {coverage}'],
+      unknownFieldCount: ['未知字段{n}个', '未知欄位{n}個', '{n} unknown fields', '不明フィールド{n}件', '미확인 필드 {n}개', '{n} حقول غير معروفة'],
+      updatedAtLabel: ['更新：{time}', '更新：{time}', 'Updated: {time}', '更新：{time}', '업데이트: {time}', 'التحديث: {time}'],
+      auditStatusLabel: ['审计状态：{status}', '審計狀態：{status}', 'Audit status: {status}', '監査状態：{status}', '감사 상태: {status}', 'حالة التدقيق: {status}'],
       result30m: ['30分钟结果', '30分鐘結果', '30 min result', '30分結果', '30분 결과', 'نتيجة 30 دقيقة'],
       result1h: ['1小时结果', '1小時結果', '1 hr result', '1時間結果', '1시간 결과', 'نتيجة ساعة'],
       result2h: ['2小时结果', '2小時結果', '2 hr result', '2時間結果', '2시간 결과', 'نتيجة ساعتين'],
       result24h: ['24小时结果', '24小時結果', '24 hr result', '24時間結果', '24시간 결과', 'نتيجة 24 ساعة'],
       none: ['暂无', '暫無', 'None', 'なし', '없음', 'لا يوجد'],
       completedZero: ['完成0个样本', '完成0個樣本', '0 samples complete', '0件完了', '0개 표본 완료', '0 عينة مكتملة'],
-      sampleGate: ['调参门槛：30分钟、2小时或24小时的完成样本均需满50个；未满50个只做观察，不用于调参。', '調參門檻：30分鐘、2小時或24小時的完成樣本均需滿50個；未滿50個只做觀察，不用於調參。', 'Tuning gate: each 30m, 2h or 24h window needs 50 completed samples; smaller sets are observation-only.', '調整基準：30分・2時間・24時間の各窓で50件完了が必要です。未満は観測のみです。', '튜닝 기준: 30분·2시간·24시간 각 구간에 50개 완료 표본이 필요합니다. 미달은 관찰용입니다.', 'بوابة الضبط: يلزم 50 عينة مكتملة لكل نافذة 30د أو 2س أو 24س؛ ما دون ذلك للمراقبة فقط.'],
+      sampleGate: ['校准门槛：至少500个平衡样本且ECE不高于10%；50个样本仅表示可开始观察。', '校準門檻：至少500個平衡樣本且ECE不高於10%；50個樣本僅表示可開始觀察。', 'Calibration gate: at least 500 balanced samples and ECE <= 10%; 50 samples only means observation may begin.', '校正基準：少なくとも500件の均衡サンプルとECE 10%以下が必要。50件は観測開始の目安にすぎません。', '보정 기준: 최소 500개 균형 표본과 ECE 10% 이하가 필요합니다. 50개는 관찰 시작 기준일 뿐입니다.', 'بوابة المعايرة: 500 عينة متوازنة على الأقل وECE لا يتجاوز 10%؛ 50 عينة تعني بدء المراقبة فقط.'],
       auditTitle: ['近30分钟深度审计', '近30分鐘深度審計', 'Deep audits: last 30 min', '過去30分の深度審査', '최근 30분 심층 감사', 'التدقيق العميق لآخر 30 دقيقة'],
       auditSubtitle: ['按链上安全、持仓结构与市场数据分批深审', '按鏈上安全、持倉結構與市場資料分批深審', 'Batched review of on-chain safety, holders and market data', 'オンチェーン安全性・保有構造・市場データを分割審査', '온체인 안전성·보유 구조·시장 데이터를 분할 심사', 'تدقيق دفعي لأمان السلسلة وهيكل الحيازة وبيانات السوق'],
       toolbarAria: ['候选筛选和排序', '候選篩選和排序', 'Candidate filters and sorting', '候補の絞り込みと並べ替え', '후보 필터 및 정렬', 'تصفية المرشحين وترتيبهم'],
@@ -1206,7 +1217,7 @@
       eventChanged: ['雷达状态发生变化', '雷達狀態發生變化', 'Radar status changed', 'レーダー状態が変化', '레이더 상태 변경', 'تغيرت حالة الرادار'],
       cycleSummary: ['最近尝试 {time} · 单轮耗时{ms}毫秒', '最近嘗試 {time} · 單輪耗時{ms}毫秒', 'Last attempt {time} · cycle {ms} ms', '最終試行 {time}・所要{ms}ms', '최근 시도 {time} · 주기 {ms}ms', 'آخر محاولة {time} · مدة الدورة {ms} مللي ثانية'],
       completedSamples: ['完成{n}个样本', '完成{n}個樣本', '{n} samples complete', '{n}件完了', '{n}개 표본 완료', '{n} عينة مكتملة'],
-      gateReady: ['调参门槛：{windows}已满50个完成样本；其他周期仍只做观察。', '調參門檻：{windows}已滿50個完成樣本；其他週期仍只做觀察。', 'Tuning gate: {windows} reached 50 samples; other windows remain observation-only.', '調整基準：{windows}は50件到達。他の期間は観測のみ。', '튜닝 기준: {windows} 구간이 50개에 도달; 다른 구간은 관찰용입니다.', 'بوابة الضبط: بلغت {windows} خمسين عينة؛ النوافذ الأخرى للمراقبة فقط.'],
+      gateReady: ['校准已通过：{samples}个样本，ECE {ece}；模型仍不会触发交易。', '校準已通過：{samples}個樣本，ECE {ece}；模型仍不會觸發交易。', 'Calibration passed: {samples} samples, ECE {ece}; the model still never triggers a trade.', '校正済み：{samples}件、ECE {ece}。モデルは取引を発動しません。', '보정 통과: {samples}개, ECE {ece}; 모델은 거래를 실행하지 않습니다.', 'اجتازت المعايرة: {samples} عينة، ECE {ece}؛ لا ينفذ النموذج أي تداول.'],
       window30m: ['30分钟', '30分鐘', '30 min', '30分', '30분', '30 دقيقة'],
       window2h: ['2小时', '2小時', '2 hr', '2時間', '2시간', 'ساعتان'],
       window24h: ['24小时', '24小時', '24 hr', '24時間', '24시간', '24 ساعة'],
@@ -1780,6 +1791,19 @@
         : secondarySecurity.verdict === 'NO_FATAL_FLAGS' ? t('goPlusClear')
           : goPlusStatus === 'UNSUPPORTED' ? t('goPlusUnsupported') : t('goPlusPending');
       const goPlusTone = secondarySecurity.verdict === 'FATAL' ? 'bad' : secondarySecurity.verdict === 'NO_FATAL_FLAGS' ? 'good' : 'warn';
+      const coverageText = Object.keys(row.coverage || {}).length
+        ? Object.entries(row.coverage).map(function (entry) { return entry[0] + ':' + (entry[1] || 'UNKNOWN'); }).join(' · ')
+        : t('unknown');
+      const riskText = t('riskSummary', {
+        score: formatPercent(row.risk && row.risk.score),
+        confidence: formatPercent(row.risk && row.risk.confidence),
+        band: row.risk && row.risk.band ? row.risk.band : t('unknown')
+      });
+      const riskBlock = '<div class="muted risk-summary">' + escapeHtml(riskText) + '<br>'
+        + escapeHtml(t('coverageSummary', { coverage: coverageText })) + '<br>'
+        + escapeHtml(t('unknownFieldCount', { n: formatCount(number(row.unknownFieldCount)) })) + ' · '
+        + escapeHtml(t('updatedAtLabel', { time: relativeTime(row.updatedAt || row.auditedAt, now) })) + ' · '
+        + escapeHtml(t('auditStatusLabel', { status: row.auditStatus || t('unknown') })) + '</div>';
 
       return '<tr class="' + freshness.className + '">' +
         '<td><span class="symbol">' + escapeHtml(row.symbol || '?') + '</span><div>' + escapeHtml(row.name || '') + '</div><div class="addr mono">' + escapeHtml(address.slice(0, 8)) + '…' + escapeHtml(address.slice(-6)) + '</div>' + actionLinks(row) + '</td>' +
@@ -1793,7 +1817,7 @@
         '<td class="stack">' + (earlyExit ? skipped : checkLine(knownAtMost(wallets.botHoldRate, policy.maxBotHoldRate), t('botsLabel', { value: formatPercent(wallets.botHoldRate) }), waitingForRecheck) + checkLine(knownAtMost(wallets.linkedHoldRate, policy.maxLinkedHoldRate), t('linkedLabel', { value: formatPercent(wallets.linkedHoldRate) }), waitingForRecheck)) + '</td>' +
         '<td class="' + (observation.pass ? 'good' : 'bad') + '">' + (earlyExit ? skipped : escapeHtml(safeMessage(observation.reason, t('marketUnknown'))) + '<br><span class="muted">' + escapeHtml(t('return5m', { value: formatPercent(observation.return5m) })) + '<br>' + escapeHtml(t('maxDrawdown', { value: formatPercent(observation.maxDrawdown) })) + '</span>') + '</td>' +
         '<td><span class="warn">' + escapeHtml(t('manualReview')) + '</span><br><span class="muted">' + escapeHtml(officialStatus) + '</span></td>' +
-        '<td>' + statusBadge(row) + '<div class="reasons">' + reasons + '</div><div class="review-actions">' +
+        '<td>' + statusBadge(row) + riskBlock + '<div class="reasons">' + reasons + '</div><div class="review-actions">' +
           '<button type="button" class="mini-button pass ' + (passActive ? 'active' : '') + '" data-action="pass" data-address="' + encodedAddress + '" ' + (canPass ? '' : 'disabled title="' + escapeHtml(passDisabledReason) + '"') + '>' + escapeHtml(passActive ? t('cancelPass') : t('manualPass')) + '</button>' +
           '<button type="button" class="mini-button ignore ' + (ignoreActive ? 'active' : '') + '" data-action="ignore" data-address="' + encodedAddress + '">' + escapeHtml(ignoreActive ? t('cancelIgnore') : t('ignoreAction')) + '</button>' +
           '<button type="button" class="mini-button" data-action="favorite" data-address="' + encodedAddress + '">' + escapeHtml(t(annotationFor(row.chain || activeChain(lastData), row.address).favorite ? 'unfavorite' : 'favorite')) + '</button>' +
@@ -2076,17 +2100,17 @@
       setReturn('outcome1h', summary.averageReturn1h);
       setReturn('outcome2h', summary.averageReturn2h);
       setReturn('outcome24h', summary.averageReturn24h);
+      setReturn('outcomeObserved', summary.observedReturn);
+      setReturn('outcomeEstimated', summary.estimatedNetReturn);
       byId('outcome30mCount').textContent = t('completedSamples', { n: formatCount(number(summary.completed30m)) });
       byId('outcome1hCount').textContent = t('completedSamples', { n: formatCount(number(summary.completed1h)) });
       byId('outcome2hCount').textContent = t('completedSamples', { n: formatCount(number(summary.completed2h)) });
       byId('outcome24hCount').textContent = t('completedSamples', { n: formatCount(number(summary.completed24h)) });
-      const readyWindows = [
-        [t('window30m'), number(summary.completed30m)],
-        [t('window2h'), number(summary.completed2h)],
-        [t('window24h'), number(summary.completed24h)]
-      ].filter(function (item) { return item[1] >= 50; }).map(function (item) { return item[0]; });
-      byId('outcomeGate').textContent = readyWindows.length
-        ? t('gateReady', { windows: readyWindows.join(currentLocale === 'zh-CN' || currentLocale === 'zh-TW' ? '、' : ', ') })
+      byId('outcomeGate').textContent = summary.calibrationReady === true
+        ? t('gateReady', {
+          samples: formatCount(number(summary.calibrationSampleCount, number(summary.tracked))),
+          ece: formatPercent(summary.expectedCalibrationError)
+        })
         : t('sampleGate');
       const coverage = summary.coverage || {};
       byId('outcomeCoverage').innerHTML = ['passed', 'rejected'].map(function (cohort) {

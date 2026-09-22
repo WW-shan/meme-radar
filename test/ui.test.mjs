@@ -195,8 +195,22 @@ test('看板包含新鲜度、运行进度和动态降级支持', () => {
   assert.match(html, /30分钟结果/);
   assert.match(html, /2小时结果/);
   assert.match(html, /24小时结果/);
-  assert.match(html, /未满50个只做观察，不用于调参/);
+  assert.match(html, /至少500个平衡样本且ECE不高于10%/);
+  assert.match(html, /50个样本仅表示可开始观察/);
   assert.match(html, /prefers-reduced-motion/);
+});
+
+test('候选和结果面板展示风险置信度、覆盖与收益口径', () => {
+  assert.match(html, /id="outcomeObserved"/);
+  assert.match(html, /id="outcomeEstimated"/);
+  assert.match(html, /riskSummary/);
+  assert.match(html, /coverageSummary/);
+  assert.match(html, /unknownFieldCount/);
+  assert.match(html, /updatedAtLabel/);
+  assert.match(html, /auditStatusLabel/);
+  assert.match(html, /observedReturn/);
+  assert.match(html, /estimatedNetReturn/);
+  assert.doesNotMatch(html, /\bpnl\b/i);
 });
 
 test('候选表明确展示GoPlus与DexScreener交叉验证', () => {

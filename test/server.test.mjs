@@ -84,6 +84,11 @@ test('public status is a field allowlist and removes raw provider and queue deta
       address: '0x1111111111111111111111111111111111111111',
       symbol: 'SAFE',
       status: 'X_REVIEW',
+      risk: { version: 'risk-engine-v1', score: .6, confidence: .7, band: 'WAIT_RECHECK', reasons: [{ code: 'LOW_LIQUIDITY', value: 5000, private: 'risk-secret' }] },
+      coverage: { dexScreener: 'OK', goPlus: 'NO_DATA' },
+      unknownFieldCount: 2,
+      updatedAt: 92,
+      auditStatus: 'DEGRADED',
       rawDiscovery: { apiKey: 'candidate-secret' },
       deep: { chainPass: true, checks: { tax: true }, security: {}, wallets: {}, observation: {}, sellability: {} },
       social: {},
@@ -109,6 +114,13 @@ test('public status is a field allowlist and removes raw provider and queue deta
   assert.equal(result.sourceHealth.discovery.trenches.message, 'GMGN数据请求超时。');
   assert.equal(result.sourceHealth.lastAudit.endpoints.security.message, 'GMGN数据请求暂时失败。');
   assert.equal(result.candidates[0].info.website, '');
+  assert.equal(result.candidates[0].risk.score, .6);
+  assert.equal(result.candidates[0].risk.confidence, .7);
+  assert.equal(result.candidates[0].risk.band, 'WAIT_RECHECK');
+  assert.equal(result.candidates[0].coverage.goPlus, 'NO_DATA');
+  assert.equal(result.candidates[0].unknownFieldCount, 2);
+  assert.equal(result.candidates[0].updatedAt, 92);
+  assert.equal(result.candidates[0].auditStatus, 'DEGRADED');
   assert.equal(result.candidates[0].secondary.security.verdict, 'NO_FATAL_FLAGS');
   assert.equal(result.candidates[0].secondary.market.websites[0], 'https://example.com/');
   assert.equal(result.error, '数据请求暂时失败，下一轮将自动重试。');

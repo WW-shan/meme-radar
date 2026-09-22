@@ -145,6 +145,14 @@ function publicRisk(risk = null) {
   };
 }
 
+function publicCoverage(coverage = {}) {
+  if (!coverage || typeof coverage !== 'object' || Array.isArray(coverage)) return {};
+  return Object.fromEntries(Object.entries(coverage).slice(0, 20).map(([key, value]) => [
+    text(key, 32),
+    publicCode(value && typeof value === 'object' ? value.status : value)
+  ]));
+}
+
 function publicCandidate(row = {}) {
   const earlyExit = row.auditHealth?.earlyExit === true;
   const deep = row.deep || {};
@@ -155,6 +163,10 @@ function publicCandidate(row = {}) {
   const sellability = deep.sellability || {};
   const social = row.social || {};
   const info = row.info || {};
+  const coverage = publicCoverage(row.coverage || row.secondary?.sources || {});
+  const unknownFieldCount = Number.isFinite(Number(row.unknownFieldCount))
+    ? Number(row.unknownFieldCount)
+    : new Set([...(deep.blockingUnknownFields || []), ...(deep.unknownFields || []), ...(social.unknownFields || [])]).size;
   return {
     address: text(row.address, 80),
     chain: text(row.chain, 32),
@@ -175,6 +187,10 @@ function publicCandidate(row = {}) {
     gmgnUrl: externalUrl(row.gmgnUrl),
     status: ['X_REVIEW', 'QUALIFIED'].includes(row.status) && !currentRules ? 'WAIT_RECHECK' : publicCode(row.risk?.band || row.status),
     auditedAt: finite(row.auditedAt),
+    updatedAt: finite(row.updatedAt ?? row.auditedAt),
+    auditStatus: text(row.auditStatus || (row.auditHealth?.complete === false ? 'DEGRADED' : 'COMPLETE'), 24),
+    unknownFieldCount,
+    coverage,
     staleAt: finite(row.staleAt),
     reviewRevision: text(row.reviewRevision, 64),
     risk: publicRisk(row.risk),
