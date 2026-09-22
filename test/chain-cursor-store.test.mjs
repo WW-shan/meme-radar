@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ChainCursorStore } from '../src/chain/cursor-store.mjs';
+import { ChainCursorStore, openChainCursorStore } from '../src/chain/cursor-store.mjs';
 import { createChainEventSources } from '../src/chain/sources.mjs';
 
 function temporary(t) {
@@ -70,4 +70,35 @@ test('EVM source resumes from the persisted next block after a restart', async t
   assert.deepEqual(lookup.params[0].fromBlock, '0xd');
   assert.deepEqual(lookup.params[0].toBlock, '0xe');
   assert.equal(new ChainCursorStore(directory).get('evm-bsc-pool'), 14);
+});
+
+test('opening a corrupt cursor file quarantines it and resumes from a clean store', t => {
+  const directory = temporary(t);
+  const file = path.join(directory, 'chain-cursors.json');
+  const corruptBytes = JSON.stringify({ version: 1, cursors: { bad: {} } });
+  fs.writeFileSync(file, corruptBytes);
+  const seen = [];
+  const store = openChainCursorStore(directory, { onCorrupt: info => seen.push(info) });
+
+  assert.equal(store.get('evm-bsc-pool'), null);
+  store.set('evm-bsc-pool', 7);
+  assert.equal(new ChainCursorStore(directory).get('evm-bsc-pool'), 7);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].code, 'CHAIN_CURSOR_CORRUPT');
+  assert.equal(seen[0].quarantined.length, 1);
+  assert.equal(fs.readFileSync(seen[0].quarantined[0], 'utf8'), corruptBytes,
+    'the corrupt file must be preserved for inspection');
+});
+
+test('opening a healthy cursor file never quarantines or rewrites it', t => {
+  const directory = temporary(t);
+  new ChainCursorStore(directory).set('solana-migration', 'sig-1');
+  const before = fs.readFileSync(path.join(directory, 'chain-cursors.json'), 'utf8');
+  let calls = 0;
+  const store = openChainCursorStore(directory, { onCorrupt: () => { calls++; } });
+
+  assert.equal(store.get('solana-migration'), 'sig-1');
+  assert.equal(calls, 0);
+  assert.deepEqual(fs.readdirSync(directory).sort(), ['chain-cursors.json']);
+  assert.equal(fs.readFileSync(path.join(directory, 'chain-cursors.json'), 'utf8'), before);
 });

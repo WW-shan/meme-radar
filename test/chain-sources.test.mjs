@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SolanaEventSource, parseSolanaMigrationTransaction } from '../src/chain/solana-source.mjs';
@@ -170,4 +171,132 @@ test('configured Solana and EVM sources emit orchestrator-ready rows through the
   assert.deepEqual(evmCalls[1], ['eth_getLogs', [{
     address: factory.address, fromBlock: '0x0', toBlock: '0x10', topics: [factory.topic]
   }]]);
+});
+
+function migrationTransaction(mint) {
+  return {
+    meta: { err: null },
+    transaction: {
+      message: {
+        instructions: [{
+          programId: 'MIGRATION_PROGRAM',
+          parsed: { type: 'migrate', info: { mint } }
+        }]
+      }
+    }
+  };
+}
+
+test('Solana source drains every page between the saved cursor and the head', async () => {
+  const signatures = ['sig-4', 'sig-3', 'sig-2', 'sig-1'];
+  const pages = [
+    signatures.slice(0, 2),
+    signatures.slice(2, 4),
+    ['sig-0']
+  ];
+  const signatureCalls = [];
+  const transactionCalls = [];
+  const rpc = {
+    call: async (method, params) => {
+      if (method === 'getSignaturesForAddress') {
+        signatureCalls.push(params);
+        return { result: (pages[signatureCalls.length - 1] || []).map((signature, index) => ({
+          signature, slot: 100 - signatureCalls.length * 2 + index, blockTime: 1_800_000_000
+        })) };
+      }
+      if (method === 'getTransaction') {
+        transactionCalls.push(params[0]);
+        return { result: migrationTransaction(`MINT-${params[0]}`) };
+      }
+      throw new Error(`unexpected method ${method}`);
+    }
+  };
+  const source = new SolanaEventSource({ rpc, migrationAuthority: 'AUTHORITY', programId: 'MIGRATION_PROGRAM' });
+  const result = await source.poll({ until: 'sig-0', limit: 2 });
+
+  assert.deepEqual(result.events.map(row => row.token.address), ['MINT-sig-4', 'MINT-sig-3', 'MINT-sig-2', 'MINT-sig-1']);
+  assert.equal(result.cursor, 'sig-4');
+  assert.equal(result.hasMore, false);
+  assert.equal(signatureCalls.length, 3);
+  assert.equal(signatureCalls[1][1].before, 'sig-3');
+  assert.equal(signatureCalls[2][1].before, 'sig-1');
+  assert.deepEqual(transactionCalls, signatures);
+});
+
+test('Solana source fails closed instead of advancing past an unavailable transaction', async () => {
+  const rpc = {
+    call: async method => method === 'getSignaturesForAddress'
+      ? { result: [{ signature: 'sig-unavailable', slot: 1, blockTime: 1_800_000_000 }] }
+      : { result: null }
+  };
+  const source = new SolanaEventSource({ rpc, migrationAuthority: 'AUTHORITY', programId: 'MIGRATION_PROGRAM' });
+  await assert.rejects(source.poll({ until: 'saved-cursor', limit: 10 }),
+    error => error.code === 'CHAIN_SOURCE_INCOMPLETE');
+});
+
+test('EVM source uses a bounded initial lookback instead of requesting genesis archives', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-evm-lookback-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const factory = {
+    address: '0x1111111111111111111111111111111111111111',
+    topic: `0x${'aa'.repeat(32)}`
+  };
+  const calls = [];
+  const fetchImpl = async (_url, request) => {
+    const body = JSON.parse(request.body);
+    calls.push(body);
+    return new Response(JSON.stringify({
+      jsonrpc: '2.0', id: 1,
+      result: body.method === 'eth_blockNumber' ? '0x3e8' : []
+    }), { status: 200 });
+  };
+  const config = {
+    chainEventsEnabled: true,
+    stateDir: directory,
+    evmRpcUrls: { bsc: 'https://bsc.example' },
+    evmFactories: { bsc: [factory] },
+    evmStartBlocks: { bsc: 0 },
+    evmInitialLookbackBlocks: 100,
+    evmBlockChunkSize: 100
+  };
+  const source = createChainEventSources(config, { fetchImpl }).find(row => row.name === 'evm-bsc-pool');
+  await source.read('bsc');
+  const lookup = calls.find(row => row.method === 'eth_getLogs');
+  assert.equal(lookup.params[0].fromBlock, '0x385');
+  assert.equal(lookup.params[0].toBlock, '0x3e8');
+});
+
+test('EVM source advances large backlogs in bounded chunks without skipping blocks', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-evm-chunks-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const factory = {
+    address: '0x1111111111111111111111111111111111111111',
+    topic: `0x${'aa'.repeat(32)}`
+  };
+  const calls = [];
+  const fetchImpl = async (_url, request) => {
+    const body = JSON.parse(request.body);
+    calls.push(body);
+    return new Response(JSON.stringify({
+      jsonrpc: '2.0', id: 1,
+      result: body.method === 'eth_blockNumber' ? '0x3e8' : []
+    }), { status: 200 });
+  };
+  const config = {
+    chainEventsEnabled: true,
+    stateDir: directory,
+    evmRpcUrls: { bsc: 'https://bsc.example' },
+    evmFactories: { bsc: [factory] },
+    evmStartBlocks: { bsc: 100 },
+    evmInitialLookbackBlocks: 100,
+    evmBlockChunkSize: 10
+  };
+  const source = createChainEventSources(config, { fetchImpl }).find(row => row.name === 'evm-bsc-pool');
+  await source.read('bsc');
+  await source.read('bsc');
+  const lookups = calls.filter(row => row.method === 'eth_getLogs').map(row => row.params[0]);
+  assert.deepEqual(lookups.map(row => [row.fromBlock, row.toBlock]), [
+    ['0x64', '0x6d'],
+    ['0x6e', '0x77']
+  ]);
 });

@@ -46,17 +46,29 @@ export function createChainEventSources(config = {}, { fetchImpl = globalThis.fe
     });
     const cursorName = `evm-${chain}-pool`;
     const savedBlock = cursors?.get(cursorName) ?? null;
-    let nextBlock = savedBlock === null
-      ? Number(config.evmStartBlocks?.[chain] || 0)
-      : Number(savedBlock) + 1;
+    if (savedBlock !== null && (!Number.isSafeInteger(Number(savedBlock)) || Number(savedBlock) < 0)) {
+      throw Object.assign(new Error(`invalid EVM cursor for ${chain}`), { code: 'CHAIN_CURSOR_CORRUPT' });
+    }
+    const configuredStart = Number(config.evmStartBlocks?.[chain] ?? 0);
+    const initialLookbackBlocks = Number.isInteger(config.evmInitialLookbackBlocks)
+      && config.evmInitialLookbackBlocks > 0 ? Math.min(1_000_000, config.evmInitialLookbackBlocks) : 1000;
+    const blockChunkSize = Number.isInteger(config.evmBlockChunkSize)
+      && config.evmBlockChunkSize > 0 ? Math.min(10_000, config.evmBlockChunkSize) : 1000;
+    let nextBlock = savedBlock === null ? null : Number(savedBlock) + 1;
     sources.push({
       name: `evm-${chain}-pool`,
       read: async requestedChain => {
         if (requestedChain !== chain) throw unconfigured(`EVM source only supports ${chain}`);
         const latestBlock = Number(BigInt(await rpc.call('eth_blockNumber')));
-        if (!Number.isInteger(latestBlock) || latestBlock < 0) throw new Error('invalid latest block');
+        if (!Number.isSafeInteger(latestBlock) || latestBlock < 0) throw new Error('invalid latest block');
+        if (nextBlock === null) {
+          nextBlock = configuredStart > 0
+            ? configuredStart
+            : Math.max(0, latestBlock - initialLookbackBlocks + 1);
+        }
         if (latestBlock < nextBlock) return { stage: 'new_creation', rows: [] };
-        const result = await evm.poll({ chain, fromBlock: nextBlock, toBlock: latestBlock });
+        const toBlock = Math.min(latestBlock, nextBlock + blockChunkSize - 1);
+        const result = await evm.poll({ chain, fromBlock: nextBlock, toBlock });
         cursors?.set(cursorName, result.cursor);
         nextBlock = result.cursor + 1;
         return { stage: 'new_creation', rows: discoveryRows(result.events) };

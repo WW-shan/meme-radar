@@ -12,7 +12,7 @@ import { RadarControls } from './local-store.mjs';
 import { LiveDiscovery } from './live-discovery.mjs';
 import { configureWindowsSystemProxy } from './windows-proxy.mjs';
 import { createChainEventSources } from './chain/sources.mjs';
-import { ChainCursorStore } from './chain/cursor-store.mjs';
+import { openChainCursorStore } from './chain/cursor-store.mjs';
 import { CreatorReputation } from './analytics/creator-reputation.mjs';
 import { RiskMemory } from './analytics/risk-memory.mjs';
 import { EventStore } from './evaluation/event-store.mjs';
@@ -43,7 +43,13 @@ if (keyStore.disconnected()) gmgn.resetCredentials({ disabled: true });
 gmgn.nextAllowedAt = Math.max(0, Number(state.value.retryAt) || 0);
 const controls = new RadarControls(config.stateDir, config.supportedChains, state.value.activeChain || config.chain);
 const eventStore = new EventStore(config.stateDir);
-const chainCursorStore = new ChainCursorStore(config.stateDir);
+// Chain events are optional, so a damaged cursor file is recovered (and kept
+// for inspection) instead of blocking the read-only GMGN radar from starting.
+const chainCursorStore = config.chainEventsEnabled
+  ? openChainCursorStore(config.stateDir, {
+    onCorrupt: info => console.error(`链上扫描游标文件损坏，已隔离到 ${info.quarantined.join('、') || '(移动失败，请人工检查)'}；链上事件将从有界回看窗口重新开始。`)
+  })
+  : null;
 const scanner = new Scanner({ gmgn, secondary: new SecondaryValidator(), state, controls, chainSources: createChainEventSources(config, { cursorStore: chainCursorStore }), creatorReputation: new CreatorReputation(state.value.creatorHistory || []), riskMemory: new RiskMemory(state.value.riskMemory || state.value.riskExclusions || {}), eventStore });
 const connection = new GmgnConnection({ gmgn, keyStore, scanner });
 const liveDiscovery = new LiveDiscovery({ gmgn });

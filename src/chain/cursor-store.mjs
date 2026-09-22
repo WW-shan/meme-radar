@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { atomicJson, readJsonWithBackup } from '../local-store.mjs';
 
@@ -8,6 +9,31 @@ function validCursor(value) {
 
 function corrupt() {
   return Object.assign(new Error('chain cursor store is corrupt'), { code: 'CHAIN_CURSOR_CORRUPT' });
+}
+
+// A corrupt cursor file must never take the whole radar down: chain events are
+// an optional early signal, and the cursor only records how far the scanner
+// already walked. Quarantine the unreadable file so it can be inspected, then
+// restart from a clean cursor instead of scanning from an unknown position.
+export function openChainCursorStore(directory, { onCorrupt = () => {} } = {}) {
+  try {
+    return new ChainCursorStore(directory);
+  } catch (error) {
+    if (error?.code !== 'CHAIN_CURSOR_CORRUPT' && error?.code !== 'STATE_CORRUPT') throw error;
+    const base = path.resolve(directory);
+    const quarantined = [];
+    for (const name of ['chain-cursors.json', 'chain-cursors.json.bak']) {
+      const source = path.join(base, name);
+      if (!fs.existsSync(source)) continue;
+      const target = `${source}.corrupt-${Date.now()}`;
+      try {
+        fs.renameSync(source, target);
+        quarantined.push(target);
+      } catch {}
+    }
+    onCorrupt({ code: error.code, file: path.join(base, 'chain-cursors.json'), quarantined });
+    return new ChainCursorStore(directory);
+  }
 }
 
 export class ChainCursorStore {
