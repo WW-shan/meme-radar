@@ -146,6 +146,9 @@ test('多链切换仅向本地后端提交白名单链标识', () => {
   assert.match(html, /fetch\('\/api\/active-chain'/);
   assert.match(html, /JSON\.stringify\(\{ chain: chain \}\)/);
   assert.match(html, /renderChainSwitcher\(null\)/);
+  assert.match(html, /secondaryVerdict/);
+  assert.match(html, /coverageManualOnly/);
+  assert.match(html, /coverageUnknown/);
 });
 
 test('页面不再公开展示严格筛选规则', () => {

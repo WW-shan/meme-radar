@@ -3,10 +3,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeGmgnApiKey } from './gmgn-key-store.mjs';
-import { secondaryChainSupport } from './secondary.mjs';
 import { tokenKey } from './local-store.mjs';
 import { CHART_RISK_VERSION, applyRiskExclusion } from './chart-risk.mjs';
 import { AveError } from './ave-settings.mjs';
+import { coverageFor } from './source-coverage.mjs';
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const CHAIN_IDS = new Set(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']);
@@ -153,6 +153,15 @@ function publicCoverage(coverage = {}) {
   ]));
 }
 
+function publicCoverageRegistry(source = {}) {
+  return Object.fromEntries(Object.entries(source).slice(0, 20).map(([chain, row]) => [text(chain, 32), {
+    chain: text(row?.chain, 32),
+    dexScreener: publicCode(row?.dexScreener),
+    goPlus: publicCode(row?.goPlus),
+    secondaryVerdict: publicCode(row?.secondaryVerdict)
+  }]));
+}
+
 function publicCandidate(row = {}) {
   const earlyExit = row.auditHealth?.earlyExit === true;
   const deep = row.deep || {};
@@ -163,7 +172,7 @@ function publicCandidate(row = {}) {
   const sellability = deep.sellability || {};
   const social = row.social || {};
   const info = row.info || {};
-  const coverage = publicCoverage(row.coverage || row.secondary?.sources || {});
+  const coverage = publicCoverage(row.coverage || coverageFor(row.chain) || row.secondary?.sources || {});
   const unknownFieldCount = Number.isFinite(Number(row.unknownFieldCount))
     ? Number(row.unknownFieldCount)
     : new Set([...(deep.blockingUnknownFields || []), ...(deep.unknownFields || []), ...(social.unknownFields || [])]).size;
@@ -612,6 +621,7 @@ export function toPublicStatus(source = {}) {
       reason: publicMessage(source.xCapability?.reason, 'X社区需要人工复核。', 120)
     },
     sourceHealth: publicSourceHealth(source.sourceHealth),
+    coverage: publicCoverageRegistry(source.coverage),
     auditQueueStats: publicAuditQueueStats(source.auditQueueStats),
     outcomeSummary: publicOutcomeSummary(source.outcomeSummary),
     policy: {
@@ -974,9 +984,7 @@ export function createServer({ state, settings, controls, switchChain, saveGmgnK
         voiceSnapshot: voiceSnapshot(state.value, controls?.value.enabledChains || [state.value.activeChain]),
         scheduler: { scanningChain: text(state.value.activeChain, 32), enabledChains: controls?.value.enabledChains || [state.value.activeChain],
           lastSuccessAt: finite(state.value.lastSuccessAt), status: text(state.value.status, 32) },
-        coverage: Object.fromEntries([...CHAIN_IDS].map(id => [id, {
-          dexScreener: Boolean(secondaryChainSupport.dexScreener[id]), goPlus: Boolean(secondaryChainSupport.goPlus[id])
-        }])),
+        coverage: Object.fromEntries([...CHAIN_IDS].map(id => [id, coverageFor(id)])),
         requestMetrics: countSummary(state.value.requestMetrics || {}, ['requests', 'cacheHits', 'rateLimits', 'cooldownUntil'])
       };
       if (url.pathname === '/api/export') {

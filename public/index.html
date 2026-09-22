@@ -1476,9 +1476,10 @@
       const enabled = scheduler.enabledChains || [activeChain(data)];
       if (!selectedChainsDirty) byId('scanSelection').innerHTML = chainCatalog.map(function (chain) {
         const coverage = data.coverage && data.coverage[chain.id];
-        const covered = coverage && coverage.goPlus && coverage.dexScreener;
+        const verdict = coverage && coverage.secondaryVerdict;
+        const coverageKey = verdict === 'AVAILABLE' ? 'coverageAvailable' : verdict === 'MANUAL_ONLY' ? 'coverageManualOnly' : 'coverageUnknown';
         return '<label><input type="checkbox" value="' + chain.id + '" ' + (enabled.includes(chain.id) ? 'checked' : '') + '>'
-          + escapeHtml(chainLabel(chain)) + '<span class="muted"> · ' + escapeHtml(t(covered ? 'coverageDual' : 'coverageSingle')) + '</span></label>';
+          + escapeHtml(chainLabel(chain)) + '<span class="muted"> · ' + escapeHtml(t(coverageKey)) + '</span></label>';
       }).join('');
       byId('schedulerDetail').textContent = t('schedulerSummary', { chains: enabled.join(' / '), current: scheduler.scanningChain || activeChain(data) });
       byId('notificationButton').textContent = t(alertsEnabled ? 'muteAlerts' : 'enableAlerts');

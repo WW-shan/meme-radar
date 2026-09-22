@@ -1,7 +1,5 @@
 import { enrichDomain } from './enrichment/domain.mjs';
-
-const DEX_CHAIN_IDS = Object.freeze({ sol: 'solana', bsc: 'bsc', base: 'base', eth: 'ethereum' });
-const GOPLUS_EVM_CHAIN_IDS = Object.freeze({ eth: '1', bsc: '56', base: '8453' });
+import { coverageFor, DEX_CHAIN_IDS, GOPLUS_CHAIN_IDS } from './source-coverage.mjs';
 
 const NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 const DEFAULT_MAX_BYTES = 1_000_000;
@@ -418,9 +416,10 @@ export class SecondaryValidator {
     const normalizedChain = cleanString(chain, 24).toLowerCase();
     const address = cleanString(tokenAddress, 128);
     const dexChainId = DEX_CHAIN_IDS[normalizedChain];
-    const goPlusChainId = GOPLUS_EVM_CHAIN_IDS[normalizedChain];
-    const goPlusSupported = normalizedChain === 'sol' || Boolean(goPlusChainId);
-    const dexSupported = Boolean(dexChainId);
+    const goPlusChainId = GOPLUS_CHAIN_IDS[normalizedChain];
+    const coverage = coverageFor(normalizedChain);
+    const goPlusSupported = coverage.goPlus === 'SUPPORTED';
+    const dexSupported = coverage.dexScreener === 'SUPPORTED';
     const market = emptyMarket();
     let security = { complete: false, verdict: 'UNSUPPORTED', fatal: [], unknownFields: ['tokenSecurity'], fields: {}, buyTax: null, sellTax: null };
     const sources = {
@@ -478,7 +477,7 @@ export class SecondaryValidator {
       && market.complete && security.complete;
     return {
       status: complete ? 'COMPLETE' : 'DEGRADED', complete, checkedAt: this.now(),
-      chain: normalizedChain, tokenAddress: address, sources, market, security, conflicts, domain
+      chain: normalizedChain, tokenAddress: address, sources, market, security, conflicts, domain, coverage
     };
   }
 
@@ -512,5 +511,5 @@ export async function validateSecondary(input, options = {}) {
 
 export const secondaryChainSupport = Object.freeze({
   dexScreener: Object.freeze({ ...DEX_CHAIN_IDS }),
-  goPlus: Object.freeze({ sol: 'solana', ...GOPLUS_EVM_CHAIN_IDS })
+  goPlus: Object.freeze({ ...GOPLUS_CHAIN_IDS })
 });

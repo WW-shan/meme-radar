@@ -12,6 +12,7 @@ import { scoreRisk } from './analytics/risk-engine.mjs';
 import { RiskMemory } from './analytics/risk-memory.mjs';
 import { LifecycleTracker, LIFECYCLE_ORDER } from './discovery/lifecycle.mjs';
 import { calibrationReport } from './evaluation/calibration.mjs';
+import { coverageFor } from './source-coverage.mjs';
 
 const numberOrNull = value => {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
@@ -806,6 +807,7 @@ export class Scanner {
             auditHealth: audit._meta || { complete: true, endpoints: {} },
             lifecycleStage,
             risk,
+            coverage: coverageFor(chain),
             info: {
               twitter: social.twitter,
               website: String(first(primaryWebsite, secondaryWebsite) || '')
