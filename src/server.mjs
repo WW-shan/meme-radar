@@ -10,6 +10,7 @@ import { AveError } from './ave-settings.mjs';
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const CHAIN_IDS = new Set(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']);
+const OUTCOME_HORIZONS = Object.freeze(['m5', 'm15', 'm30', 'h1', 'h2', 'h6', 'h24']);
 const CHECK_FIELDS = [
   'openSource', 'ownerRenounced', 'lpLocked', 'notHoneypot', 'tax', 'rug',
   'concentration', 'dev', 'insider', 'bundler', 'sniper', 'wash', 'liquidity',
@@ -380,7 +381,103 @@ function publicAuditQueueStats(source = {}) {
   ]);
 }
 
+function publicOutcomeSample(sample) {
+  if (!sample || typeof sample !== 'object') return null;
+  return {
+    at: finiteOrNull(sample.at),
+    targetAt: finiteOrNull(sample.targetAt),
+    lagMs: finiteOrNull(sample.lagMs),
+    source: text(sample.source, 32),
+    price: finiteOrNull(sample.price),
+    return: finiteOrNull(sample.return),
+    liquidityUsd: finiteOrNull(sample.liquidityUsd),
+    volume5m: finiteOrNull(sample.volume5m),
+    sells5m: finiteOrNull(sample.sells5m),
+    failedRead: sample.failedRead === true ? true : sample.failedRead === false ? false : null,
+    sourceLatencyMs: finiteOrNull(sample.sourceLatencyMs),
+    errorCode: publicCode(sample.errorCode),
+    kind: text(sample.kind, 24)
+  };
+}
+
+function publicOutcomeCoverage(source = {}) {
+  return Object.fromEntries(['passed', 'rejected'].map(cohort => [cohort,
+    Object.fromEntries(OUTCOME_HORIZONS.map(key => {
+      const row = source?.[cohort]?.[key] || {};
+      return [key, {
+        ...countSummary(row, ['eligible', 'completed', 'missing', 'failedReads']),
+        median: finiteOrNull(row.median),
+        positiveRate: finiteOrNull(row.positiveRate)
+      }];
+    }))
+  ]));
+}
+
+function publicObservedResults(source = {}) {
+  return Object.fromEntries(OUTCOME_HORIZONS.map(key => {
+    const row = source?.[key] || {};
+    return [key, {
+      ...countSummary(row, ['eligible', 'completed', 'missing', 'failedReads']),
+      average: finiteOrNull(row.average),
+      median: finiteOrNull(row.median),
+      positiveRate: finiteOrNull(row.positiveRate)
+    }];
+  }));
+}
+
+function publicPathRisk(source = {}) {
+  return {
+    ...countSummary(source, ['tracked', 'withPath', 'complete', 'incomplete', 'observations', 'failedReads', 'firstRugCount']),
+    allComplete: source.allComplete === true,
+    maxDrawdown: finiteOrNull(source.maxDrawdown),
+    averageMaxDrawdown: finiteOrNull(source.averageMaxDrawdown),
+    medianMaxDrawdown: finiteOrNull(source.medianMaxDrawdown),
+    firstRugRate: finiteOrNull(source.firstRugRate)
+  };
+}
+
+function publicOutcomeRow(row = {}, chain = '') {
+  const observedResults = Object.fromEntries(OUTCOME_HORIZONS.map(key => [key, publicOutcomeSample(row.samples?.[key])]));
+  const completed = OUTCOME_HORIZONS.filter(key => {
+    const sample = observedResults[key];
+    return sample && sample.failedRead !== true && sample.price !== null;
+  }).length;
+  const path = row.path || {};
+  const observations = Array.isArray(path.observations) ? path.observations.map(publicOutcomeSample).filter(Boolean) : [];
+  return {
+    address: text(row.address, 128),
+    symbol: publicMessage(row.symbol, '?', 30),
+    chain,
+    baselineAt: finite(row.baselineAt),
+    baselinePrice: finiteOrNull(row.baselinePrice),
+    initialDecision: text(row.initialDecision, 32),
+    latestDecision: text(row.latestDecision, 32),
+    observedResults,
+    pathRisk: {
+      peak: finiteOrNull(path.peak),
+      maxDrawdown: finiteOrNull(path.maxDrawdown),
+      firstRugAt: finiteOrNull(path.firstRugAt),
+      status: text(path.status, 24) || 'INCOMPLETE',
+      complete: path.coverage?.complete === true,
+      observations,
+      coverage: {
+        ...countSummary(path.coverage || {}, ['expected', 'completed', 'missing', 'ratio']),
+        failedReads: finite(path.failedReads)
+      }
+    },
+    sampleCoverage: {
+      expected: OUTCOME_HORIZONS.length,
+      completed,
+      missing: OUTCOME_HORIZONS.length - completed,
+      failedReads: finite(path.failedReads),
+      complete: completed === OUTCOME_HORIZONS.length
+    },
+    samples: observedResults
+  };
+}
+
 function publicOutcomeSummary(source = {}) {
+  const sampleCoverage = publicOutcomeCoverage(source.sampleCoverage || source.coverage || {});
   return {
     ...countSummary(source, [
       'tracked', 'minimumSample', 'completed5m', 'completed15m', 'completed30m', 'completed1h',
@@ -393,13 +490,11 @@ function publicOutcomeSummary(source = {}) {
     averageReturn1h: finiteOrNull(source.averageReturn1h),
     averageReturn2h: finiteOrNull(source.averageReturn2h),
     averageReturn24h: finiteOrNull(source.averageReturn24h),
-    note: text(source.note, 160)
-    ,coverage: Object.fromEntries(['passed', 'rejected'].map(cohort => [cohort,
-      Object.fromEntries(['m5','m15','m30','h1','h2','h6','h24'].map(key => {
-        const row = source.coverage?.[cohort]?.[key] || {};
-        return [key, { ...countSummary(row, ['eligible','completed','missing']), median: finiteOrNull(row.median), positiveRate: finiteOrNull(row.positiveRate) }];
-      }))
-    ]))
+    note: text(source.note, 160),
+    observedResults: publicObservedResults(source.observedResults),
+    pathRisk: publicPathRisk(source.pathRisk),
+    sampleCoverage,
+    coverage: sampleCoverage
   };
 }
 
@@ -814,15 +909,7 @@ export function createServer({ state, settings, controls, switchChain, saveGmgnK
         output.exportedAt = Date.now();
         output.chains = Object.fromEntries(Object.entries(scopes).filter(([id]) => CHAIN_IDS.has(id)).map(([id, scope]) => [id, {
           ...toPublicStatus({ ...scope, activeChain: id, riskExclusions: state.value.riskExclusions }),
-          outcomes: (scope.outcomes || []).slice(0, 1000).map(row => ({
-            address: text(row.address, 128), symbol: publicMessage(row.symbol, '?', 30), chain: id,
-            baselineAt: finite(row.baselineAt), baselinePrice: finiteOrNull(row.baselinePrice),
-            initialDecision: text(row.initialDecision, 32), latestDecision: text(row.latestDecision, 32),
-            samples: Object.fromEntries(['m5','m15','m30','h1','h2','h6','h24'].map(key => [key, row.samples?.[key] ? {
-              at: finite(row.samples[key].at), targetAt: finite(row.samples[key].targetAt),
-              source: text(row.samples[key].source, 32), price: finiteOrNull(row.samples[key].price), return: finiteOrNull(row.samples[key].return)
-            } : null]))
-          }))
+          outcomes: (scope.outcomes || []).slice(0, 1000).map(row => publicOutcomeRow(row, id))
         }]));
         res.setHeader('Content-Disposition', 'attachment; filename="meme-radar-records.json"');
       }

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { discoveryScreen, deepScreen, marketCap, createdAt } from './scoring.mjs';
 import { socialGate } from './social.mjs';
 import { tokenInfoPrice } from './gmgn.mjs';
-import { collectOutcomeSamples, dueOutcomeJobs, outcomeCoverage, sampleRejected } from './outcomes.mjs';
+import { collectOutcomeSamples, createOutcome, dueOutcomeJobs, outcomeCoverage, sampleRejected, updateOutcomePath } from './outcomes.mjs';
 import { tokenKey } from './local-store.mjs';
 import { DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
 import { productCapabilities } from './product/mode.mjs';
@@ -250,23 +250,43 @@ export function updateOutcomeTracking(outcomes, discoveredByAddress, now, retent
   return (outcomes || [])
     .filter(item => ['X_REVIEW', 'HARD_REJECT'].includes(item?.initialDecision))
     .filter(item => now - num(item.baselineAt) <= retentionMs).map(item => {
-    const row = discoveredByAddress.get(addressKey(item.address));
-    const price = tokenPrice(row);
-    if (!(price > 0) || !(item.baselinePrice > 0)) return item;
-    const samples = { ...(item.samples || {}) };
-    const elapsedMs = now - item.baselineAt;
-    for (const [key, windowMs] of Object.entries(OUTCOME_WINDOWS)) {
-      const lagMs = elapsedMs - windowMs;
-      if (!samples[key] && lagMs >= 0 && lagMs <= graceMs) {
-        samples[key] = { at: now, targetAt: item.baselineAt + windowMs, lagMs, price, return: price / item.baselinePrice - 1 };
+      const row = discoveredByAddress.get(addressKey(item.address));
+      const price = tokenPrice(row);
+      if (!(item.baselinePrice > 0)) return item;
+      const metrics = {
+        liquidityUsd: numberOrNull(first(row?.liquidityUsd, row?.liquidity)),
+        volume5m: numberOrNull(first(row?.volume5m, row?.volume_5m, row?.volume)),
+        sells5m: numberOrNull(first(row?.sells5m, row?.sells_5m, row?.sells)),
+        sourceLatencyMs: numberOrNull(first(row?.sourceLatencyMs, row?.latencyMs))
+      };
+      if (!(price > 0)) {
+        if (!row) return updateOutcomePath(item, []);
+        return updateOutcomePath(item, [{
+          at: now, targetAt: null, lagMs: null, collectedAt: now,
+          price: null, ...metrics, failedRead: true, errorCode: 'INVALID_PRICE'
+        }]);
       }
-    }
-    return { ...item, samples, currentPrice: price, lastSeenAt: now };
-  });
+      const samples = { ...(item.samples || {}) };
+      const observations = [];
+      const elapsedMs = now - item.baselineAt;
+      for (const [key, windowMs] of Object.entries(OUTCOME_WINDOWS)) {
+        const lagMs = elapsedMs - windowMs;
+        if (!samples[key] && lagMs >= 0 && lagMs <= graceMs) {
+          const sample = {
+            at: now, targetAt: item.baselineAt + windowMs, lagMs, collectedAt: now,
+            price, return: price / item.baselinePrice - 1, ...metrics, failedRead: false
+          };
+          samples[key] = sample;
+          observations.push(sample);
+        }
+      }
+      return updateOutcomePath({ ...item, samples, currentPrice: price, lastSeenAt: now }, observations);
+    });
 }
 
 export function upsertOutcome(outcomes, candidate, now) {
-  if (!(candidate.price > 0)) return outcomes;
+  const price = numberOrNull(candidate.price);
+  if (!(price > 0)) return outcomes;
   const address = addressKey(candidate.address);
   const index = outcomes.findIndex(item => addressKey(item.address) === address);
   if (index >= 0) {
@@ -279,28 +299,66 @@ export function upsertOutcome(outcomes, candidate, now) {
     return outcomes;
   }
   if (candidate.status !== 'X_REVIEW') return outcomes;
-  outcomes.push({
-    address: candidate.address,
+  outcomes.push(createOutcome({
     chain: candidate.chain,
+    address: candidate.address,
     symbol: candidate.symbol,
     baselineAt: now,
-    baselinePrice: candidate.price,
+    baselinePrice: price,
     initialDecision: 'X_REVIEW',
     latestDecision: candidate.status,
     latestFailed: candidate.deep?.failed || [],
-    lastAuditedAt: candidate.auditedAt,
-    samples: {}
-  });
+    lastAuditedAt: candidate.auditedAt
+  }));
   return outcomes;
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2;
 }
 
 export function summarizeOutcomes(outcomes) {
   const rows = (Array.isArray(outcomes) ? outcomes : []).filter(item => item?.initialDecision === 'X_REVIEW');
+  const coverage = outcomeCoverage(outcomes || []);
   const average = key => {
     const values = rows.map(item => numberOrNull(item.samples?.[key]?.return)).filter(value => value !== null);
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   };
+  const observedResults = Object.fromEntries(Object.keys(OUTCOME_WINDOWS).map(key => {
+    const cohort = coverage.passed[key] || {};
+    const values = rows.filter(item => item.samples?.[key]?.failedRead !== true)
+      .map(item => numberOrNull(item.samples?.[key]?.return)).filter(value => value !== null);
+    return [key, {
+      eligible: cohort.eligible || 0,
+      completed: cohort.completed || 0,
+      missing: cohort.missing || 0,
+      failedReads: cohort.failedReads || 0,
+      average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
+      median: cohort.median ?? null,
+      positiveRate: cohort.positiveRate ?? null
+    }];
+  }));
   const completed = Object.fromEntries(Object.keys(OUTCOME_WINDOWS).map(key => [key, rows.filter(item => item.samples?.[key]).length]));
+  const pathRows = rows.filter(item => item.path && Array.isArray(item.path.observations));
+  const completePaths = pathRows.filter(item => item.path.coverage?.complete === true).length;
+  const maxDrawdowns = pathRows.map(item => numberOrNull(item.path.maxDrawdown)).filter(value => value !== null);
+  const firstRugCount = pathRows.filter(item => numberOrNull(item.path.firstRugAt) !== null).length;
+  const pathRisk = {
+    tracked: rows.length,
+    withPath: pathRows.length,
+    complete: completePaths,
+    incomplete: rows.length - completePaths,
+    allComplete: rows.length > 0 && completePaths === rows.length,
+    observations: pathRows.reduce((sum, item) => sum + (item.path.observations?.length || 0), 0),
+    failedReads: pathRows.reduce((sum, item) => sum + num(item.path.failedReads), 0),
+    maxDrawdown: maxDrawdowns.length ? Math.max(...maxDrawdowns) : null,
+    averageMaxDrawdown: maxDrawdowns.length ? maxDrawdowns.reduce((sum, value) => sum + value, 0) / maxDrawdowns.length : null,
+    medianMaxDrawdown: median(maxDrawdowns),
+    firstRugCount,
+    firstRugRate: rows.length ? firstRugCount / rows.length : null
+  };
   return {
     tracked: rows.length,
     minimumSample: 50,
@@ -318,8 +376,11 @@ export function summarizeOutcomes(outcomes) {
     averageReturn1h: average('h1'),
     averageReturn2h: average('h2'),
     averageReturn24h: average('h24'),
-    note: '影子验证，仅衡量筛选结果，不代表可成交收益'
-    ,coverage: outcomeCoverage(outcomes || [])
+    note: '影子验证，仅衡量筛选结果，不代表可成交收益',
+    observedResults,
+    pathRisk,
+    sampleCoverage: coverage,
+    coverage
   };
 }
 
