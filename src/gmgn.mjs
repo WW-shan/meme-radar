@@ -361,7 +361,7 @@ export class GmgnClient {
     dynamicSpecs.forEach(([name], index) => assign(name, dynamicCalls[index]));
     const calls = [...staticCalls, ...dynamicCalls];
     result._meta.complete = calls.length > 0 && calls.every(call => call.status === 'fulfilled');
-    result._meta.earlyExit = stage !== 'completed' || specs.length < allSpecs.length;
+    result._meta.earlyExit = !['completed', 'migrated'].includes(stage) || specs.length < allSpecs.length;
     if (calls.length && calls.every(call => call.status === 'rejected')) {
       const limited = calls.find(call => call.reason?.code === 'GMGN_RATE_LIMITED');
       throw limited?.reason || calls[0].reason;

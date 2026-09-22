@@ -102,7 +102,11 @@ export function runWalkForward(rows, {
   threshold = .5,
   executionAssumptions = {}
 } = {}) {
-  const ordered = sortedRows(rows);
+  const allOrdered = sortedRows(rows);
+  const requestedCutoff = finite(cutoff);
+  const ordered = requestedCutoff === null
+    ? allOrdered
+    : allOrdered.filter(row => eventAt(row) <= requestedCutoff);
   const foldSet = Array.isArray(folds) ? folds : makeFolds({
     start: eventAt(ordered[0]),
     end: eventAt(ordered.at(-1)) === null ? null : eventAt(ordered.at(-1)) + 1,
@@ -112,7 +116,7 @@ export function runWalkForward(rows, {
   });
   const reports = foldSet.map(fold => foldReport(fold, ordered, { threshold }));
   const testRows = foldSet.flatMap(fold => rowsIn(ordered, fold.testRange));
-  const dataCutoff = finite(cutoff) ?? (ordered.length ? eventAt(ordered.at(-1)) : null);
+  const dataCutoff = requestedCutoff ?? (allOrdered.length ? eventAt(allOrdered.at(-1)) : null);
   return {
     version: BACKTEST_VERSION,
     dataCutoff,
@@ -120,6 +124,7 @@ export function runWalkForward(rows, {
     threshold: finite(threshold) ?? .5,
     sampleCount: ordered.length,
     eligibleSampleCount: ordered.length,
+    excludedAfterCutoff: allOrdered.length - ordered.length,
     foldCount: reports.length,
     folds: reports,
     metrics: evaluateClassification(testRows, { threshold }),

@@ -97,7 +97,7 @@ test('scanner persists every staged discovery event and queries it by time and s
   const store = new EventStore(dir);
   const state = new RadarState(path.join(dir, 'state'));
   state.value.activeChain = 'bsc';
-  const observedAt = 1_800_000_000_000;
+  const observedAt = 1_700_000_000_000;
   const row = {
     address: '0x' + '2'.repeat(40),
     symbol: 'EVENT',
@@ -164,4 +164,87 @@ test('scanner persists a completed outcome snapshot once for evaluation joins', 
   assert.equal(rows[0].normalized.label, 'SUCCESS');
   assert.equal(rows[0].normalized.riskScore, .77);
   assert.equal(rows[0].observedAt, observedAt);
+});
+
+test('event-store appends use an index instead of rereading the whole day file', async t => {
+  const store = new EventStore(temporary(t), { now: () => 1_800_000_000_000 });
+  const read = t.mock.method(fs, 'readFileSync');
+  await store.append(event({ token: { address: 'INDEX-0' }, raw: { index: 0 }, normalized: { index: 0 } }));
+  read.mock.resetCalls();
+  for (let index = 1; index <= 25; index++) {
+    await store.append(event({ token: { address: `INDEX-${index}` }, raw: { index }, normalized: { index } }));
+  }
+  const repeatedReads = read.mock.calls.filter(call =>
+    String(call.arguments[0]).endsWith('.ndjson')
+  ).length;
+  assert.equal(repeatedReads, 0);
+  assert.equal((await store.read()).length, 26);
+});
+
+test('scanner timestamps GMGN snapshots when observed, not when the token was created', async t => {
+  const dir = temporary(t);
+  const store = new EventStore(dir);
+  const state = new RadarState(path.join(dir, 'state'));
+  const creationSec = 1_800_000_000;
+  const address = `0x${'a'.repeat(40)}`;
+  const scanner = new Scanner({
+    gmgn: { keyEpoch: 0, nextAllowedAt: 0, disabled: false, metrics: {} },
+    state,
+    eventStore: store,
+    settings: { ...config, chain: 'bsc' }
+  });
+  const observedAt = Date.now();
+  await scanner.persistDiscoveryEvents({
+    byStage: {
+      completed: [{
+        address,
+        symbol: 'PIT',
+        creation_timestamp: creationSec,
+        liquidity: 10_000,
+        raw: { creation_timestamp: creationSec }
+      }]
+    }
+  }, 'bsc', observedAt);
+
+  const [row] = await store.read({ chain: 'bsc', stage: 'completed' });
+  assert.equal(row.observedAt, observedAt);
+  assert.notEqual(row.observedAt, creationSec * 1000);
+  assert.equal(row.raw.creation_timestamp, creationSec);
+});
+
+test('discovery events never trust zero, seconds-less or implausible future timestamps', async t => {
+  const dir = temporary(t);
+  const store = new EventStore(dir);
+  const state = new RadarState(path.join(dir, 'state'));
+  const scanner = new Scanner({
+    gmgn: { keyEpoch: 0, nextAllowedAt: 0, disabled: false, metrics: {} },
+    state,
+    eventStore: store,
+    settings: { ...config, chain: 'bsc' }
+  });
+  const startedAt = Date.now();
+  const row = (suffix, observedAt) => ({
+    address: `0x${suffix.repeat(40)}`,
+    symbol: `T${suffix}`,
+    observedAt,
+    liquidity: 10_000
+  });
+  await scanner.persistDiscoveryEvents({
+    byStage: {
+      completed: [
+        row('1', 0),
+        row('2', 'not-a-time'),
+        row('3', startedAt + 2 * 86_400_000),
+        row('4', Math.floor(startedAt / 1000))
+      ]
+    }
+  }, 'bsc', startedAt);
+
+  const rows = await store.read({ chain: 'bsc', stage: 'completed' });
+  const bySymbol = Object.fromEntries(rows.map(entry => [entry.token.symbol, entry.observedAt]));
+  assert.equal(bySymbol.T1, startedAt, 'a zero timestamp must fall back to the fetch time');
+  assert.equal(bySymbol.T2, startedAt, 'an unparseable timestamp must fall back to the fetch time');
+  assert.equal(bySymbol.T3, startedAt, 'a future timestamp must not leak into point-in-time data');
+  assert.equal(bySymbol.T4, Math.floor(startedAt / 1000) * 1000, 'second-precision timestamps stay supported');
+  assert.ok(rows.every(entry => entry.observedAt <= Date.now()), 'stored observations must never be future dated');
 });

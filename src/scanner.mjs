@@ -47,6 +47,23 @@ function addressKey(value) {
   return /^0x[0-9a-f]{40}$/i.test(address) ? address.toLowerCase() : address;
 }
 
+function observationTimestamp(value, fallback, now = Date.now()) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  const milliseconds = parsed < 1e12 ? parsed * 1000 : parsed;
+  // A discovery can never be observed in the future: keep the cycle's own fetch
+  // time instead of trusting an implausible upstream timestamp.
+  if (milliseconds > now + 86_400_000) return fallback;
+  return milliseconds;
+}
+
+function discoveryObservedAt(row, fallback) {
+  if (row?.observedAt !== undefined && row.observedAt !== null && row.observedAt !== '') {
+    return observationTimestamp(row.observedAt, fallback);
+  }
+  return fallback;
+}
+
 export function twitterHandle(value) {
   const source = String(value || '').trim();
   if (!source) return '';
@@ -173,7 +190,7 @@ export function classifyDeepResult(deep, auditMeta = {}) {
       lpLocked: ['lockRate'], notHoneypot: ['honeypot', 'sellability.'], tax: ['buyTax', 'sellTax'],
       rug: ['rugRatio'], concentration: ['top10'], dev: ['devHold'], insider: ['insider'],
       bundler: ['bundler'], sniper: ['sniperHold'], wash: ['wash'], liquidity: ['liquidity'],
-      wallets: ['holders.'], observation: ['candles'], chartRisk: ['chartRisk.']
+      wallets: ['holders.'], entityGraph: ['entityGraph'], observation: ['candles'], chartRisk: ['chartRisk.']
     }[name] || [];
     return [...unknown].some(field => prefixes.some(prefix => field === prefix || field.startsWith(prefix)));
   };
@@ -541,13 +558,13 @@ export class Scanner {
     return sources;
   }
 
-  async persistDiscoveryEvents(discoveryResult, chain) {
+  async persistDiscoveryEvents(discoveryResult, chain, fallbackObservedAt = Date.now()) {
     if (!this.eventStore) return 0;
     let count = 0;
     for (const [stage, rows] of Object.entries(discoveryResult.byStage || {})) {
       for (const row of rows) {
         if (!row?.address) continue;
-        const observedAt = Number(row.observedAt || row.updated_at || row.open_timestamp * 1000 || row.creation_timestamp * 1000 || Date.now());
+        const observedAt = discoveryObservedAt(row, fallbackObservedAt);
         try {
           await this.eventStore.append({
             source: row[DISCOVERY_SOURCE] || 'discovery',
@@ -739,7 +756,7 @@ export class Scanner {
 
       const discoveryResult = await new DiscoveryOrchestrator(this.discoverySources()).run(chain);
       if (this.gmgn.keyEpoch !== keyEpoch) return;
-      await this.persistDiscoveryEvents(discoveryResult, chain);
+      await this.persistDiscoveryEvents(discoveryResult, chain, startedAt);
       this.lastDiscoveryStages = discoveryResult.byStage;
       const gmgnSourceHealth = Object.entries(discoveryResult.health)
         .filter(([name]) => name.startsWith('gmgn-'));
@@ -750,7 +767,7 @@ export class Scanner {
       for (const [stage, rows] of Object.entries(discoveryResult.byStage)) {
         if (!Object.hasOwn(LIFECYCLE_ORDER, stage)) continue;
         for (const row of rows) {
-          const observedAt = Number(row.observedAt || row.updated_at || row.open_timestamp * 1000 || row.creation_timestamp * 1000 || startedAt);
+          const observedAt = discoveryObservedAt(row, startedAt);
           lifecycle.observe({ chain, address: row.address, stage, observedAt });
           row._lifecycleStage = lifecycle.stageFor(chain, row.address) || stage;
         }

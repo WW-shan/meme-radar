@@ -38,6 +38,7 @@ test('scanner separates permanent safety failures from dynamic rechecks', () => 
   assert.equal(classifyDeepResult({ failed: ['observation'], blockingUnknownFields: [], honeypotEvidence: '未验证' }, { complete: true }).status, 'WAIT_RECHECK');
   assert.equal(classifyDeepResult({ failed: ['marketBehavior'], blockingUnknownFields: [], honeypotEvidence: '未验证' }, { complete: true }).status, 'WAIT_RECHECK');
   assert.equal(classifyDeepResult({ failed: ['tax'], blockingUnknownFields: ['buyTax'], honeypotEvidence: '未验证' }, { complete: true }).status, 'WAIT_RECHECK');
+  assert.equal(classifyDeepResult({ failed: ['entityGraph'], blockingUnknownFields: ['entityGraph'], honeypotEvidence: '未验证' }, { complete: true }).status, 'WAIT_RECHECK');
   assert.equal(classifyDeepResult({ chainPass: true, failed: [], blockingUnknownFields: [] }, { complete: true }).status, 'X_REVIEW');
   assert.equal(classifyDeepResult({ chainPass: true, failed: [], blockingUnknownFields: [] }, { complete: false }).status, 'WAIT_RECHECK');
 });

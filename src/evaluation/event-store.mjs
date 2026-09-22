@@ -18,12 +18,39 @@ export class EventStore {
   constructor(directory, { now = Date.now } = {}) {
     this.directory = path.resolve(directory, 'events');
     this.now = now;
+    this.index = new Map();
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     fs.chmodSync(this.directory, 0o700);
   }
 
   file(at = this.now()) {
     return path.join(this.directory, `${new Date(at).toISOString().slice(0, 10)}.ndjson`);
+  }
+
+  idsFor(file) {
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    const cached = this.index.get(file);
+    if (!stat) {
+      if (cached && cached.size === 0 && cached.mtimeMs === 0) return cached;
+      const empty = { ids: new Set(), size: 0, mtimeMs: 0 };
+      this.index.set(file, empty);
+      return empty;
+    }
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached;
+    const ids = new Set();
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      if (!lines[index].trim()) continue;
+      let parsed;
+      try { parsed = JSON.parse(lines[index]); }
+      catch {
+        throw Object.assign(new Error(`event store corrupt at ${path.basename(file)}:${index + 1}`), { code: 'EVENT_STORE_CORRUPT' });
+      }
+      if (parsed?.eventId) ids.add(String(parsed.eventId));
+    }
+    const entry = { ids, size: stat.size, mtimeMs: stat.mtimeMs };
+    this.index.set(file, entry);
+    return entry;
   }
 
   async append(input) {
@@ -43,19 +70,14 @@ export class EventStore {
     const eventId = crypto.createHash('sha256').update(stable(normalized)).digest('hex');
     const row = { ...normalized, eventId };
     const file = this.file(observedAt);
-    if (fs.existsSync(file)) {
-      const existing = fs.readFileSync(file, 'utf8').split('\n');
-      for (const line of existing) {
-        if (!line.trim()) continue;
-        let parsed;
-        try { parsed = JSON.parse(line); } catch {
-          throw Object.assign(new Error('event store contains a corrupt line'), { code: 'EVENT_STORE_CORRUPT' });
-        }
-        if (parsed.eventId === eventId) return row;
-      }
-    }
+    const index = this.idsFor(file);
+    if (index.ids.has(eventId)) return row;
     fs.appendFileSync(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
     fs.chmodSync(file, 0o600);
+    const stat = fs.statSync(file);
+    index.ids.add(eventId);
+    index.size = stat.size;
+    index.mtimeMs = stat.mtimeMs;
     return row;
   }
 

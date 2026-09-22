@@ -167,3 +167,24 @@ test('backtest CLI writes reproducible JSON and Markdown reports', () => {
   assert.match(fs.readFileSync(markdown, 'utf8'), /Walk-forward Backtest/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('walk-forward excludes observations after the declared cutoff', () => {
+  const folds = [{
+    index: 0,
+    trainRange: { start: -DAY, end: 0 },
+    validationRange: { start: 0, end: DAY },
+    testRange: { start: DAY, end: 2 * DAY },
+    train: [{ at: -DAY }],
+    validation: [{ at: 0 }],
+    test: [{ at: DAY }]
+  }];
+  const rows = [
+    { observedAt: 0, score: .9, label: 1 },
+    { observedAt: DAY, score: .2, label: 0 },
+    { observedAt: 10 * DAY, score: .99, label: 1 }
+  ];
+  const report = runWalkForward(rows, { folds, cutoff: 2 * DAY });
+  assert.equal(report.sampleCount, 2);
+  assert.equal(report.excludedAfterCutoff, 1);
+  assert.equal(report.metrics.sampleCount, 1);
+});

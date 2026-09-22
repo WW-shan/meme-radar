@@ -57,3 +57,14 @@ test('GmgnClient exposes lifecycle and signal helpers without trading calls', as
   assert.deepEqual(calls.map(args => args[1]), ['trenches', 'signal']);
   await assert.rejects(client.signals('sol', [14]), /Invalid signal request/);
 });
+
+test('migrated audits use the full endpoint set and are not marked as early exits', async () => {
+  const client = new GmgnClient();
+  const calls = [];
+  client.cachedRead = async args => { calls.push(args[1]); return {}; };
+  const address = '0x' + '2'.repeat(40);
+  const audit = await client.auditStage(address, 'migrated', 1_800_000_000, 'bsc');
+  assert.deepEqual(calls, ['info', 'security', 'pool', 'holders', 'traders', 'kline']);
+  assert.equal(audit._meta.complete, true);
+  assert.equal(audit._meta.earlyExit, false);
+});
