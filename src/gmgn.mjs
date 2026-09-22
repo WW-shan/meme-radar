@@ -278,6 +278,21 @@ export class GmgnClient {
     } finally { clearTimeout(timer); }
   }
 
+  async discoverStage(chain = 'robinhood', stage = 'completed', limit = 80) {
+    if (!['new_creation', 'near_completion', 'completed'].includes(stage)
+      || !Number.isInteger(limit) || limit < 1 || limit > 80) throw new Error('Invalid lifecycle discovery request');
+    const raw = await this.run(['market', 'trenches', '--chain', chain, '--type', stage, '--limit', String(limit), '--raw']);
+    return normalizeList(raw, [stage]);
+  }
+
+  async signals(chain = 'robinhood', signalTypes = [], limit = 50) {
+    const allowed = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21]);
+    if (!Array.isArray(signalTypes) || !signalTypes.length || signalTypes.some(type => !allowed.has(type))
+      || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('Invalid signal request');
+    const raw = await this.run(['market', 'signal', '--chain', chain, '--signal-type', signalTypes.join(','), '--limit', String(limit), '--raw']);
+    return normalizeList(raw, ['list', 'rank', 'tokens']);
+  }
+
   async discover(chain = 'robinhood') {
     const requests = discoveryRequestArgs(chain);
     const [trenches, trending] = await Promise.allSettled([

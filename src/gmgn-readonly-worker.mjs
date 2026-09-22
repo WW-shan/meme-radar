@@ -5,6 +5,8 @@ import { normalizeGmgnApiKey } from './gmgn-key-store.mjs';
 const CHAINS = new Set(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']);
 const RANGE_OPTIONS = ['min-created', 'max-created', 'min-marketcap', 'max-marketcap', 'min-liquidity'];
 const READS = Object.freeze({ info: 'getTokenInfo', security: 'getTokenSecurity', pool: 'getTokenPoolInfo' });
+const TRENCH_STAGES = new Set(['new_creation', 'near_completion', 'completed']);
+const SIGNAL_TYPES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21]);
 
 function parseOptions(args, allowed) {
   const options = {};
@@ -72,14 +74,28 @@ export async function executeReadOnly(client, args) {
   if (group === 'market' && command === 'trenches') {
     const opts = parseOptions(rest, ['chain', 'type', 'limit', 'filter-preset', 'sort-by', 'direction', ...RANGE_OPTIONS]);
     const limit = Number(opts.limit || 80);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 80 || opts.type !== 'completed'
-      || opts['filter-preset'] !== 'safe' || opts['sort-by'] !== 'volume_1h' || opts.direction !== 'desc') throw new Error('Invalid discovery request');
-    const data = await client.getTrenches(opts.chain, ['completed'], undefined, limit, {
-      max_rug_ratio: 0.3, max_bundler_rate: 0.3, max_insider_ratio: 0.3, ...ranges(opts)
+    const stage = opts.type || 'completed';
+    if (!Number.isInteger(limit) || limit < 1 || limit > 80 || !TRENCH_STAGES.has(stage)
+      || (opts['filter-preset'] && opts['filter-preset'] !== 'safe')
+      || (opts['sort-by'] && opts['sort-by'] !== 'volume_1h')
+      || (opts.direction && opts.direction !== 'desc')) throw new Error('Invalid discovery request');
+    const filters = { ...ranges(opts) };
+    if (opts['filter-preset'] === 'safe') Object.assign(filters, {
+      max_rug_ratio: 0.3, max_bundler_rate: 0.3, max_insider_ratio: 0.3
     });
+    const data = await client.getTrenches(opts.chain, [stage], undefined, limit, Object.keys(filters).length ? filters : undefined);
     return Object.fromEntries(Object.entries(data || {}).map(([key, value]) => [key,
       Array.isArray(value) ? [...value].sort((a, b) => Number(b.volume_1h || 0) - Number(a.volume_1h || 0)) : value
     ]));
+  }
+  if (group === 'market' && command === 'signal') {
+    const opts = parseOptions(rest, ['chain', 'signal-type', 'limit']);
+    const values = String(opts['signal-type'] || '').split(',').map(value => Number(value.trim()));
+    const limit = Number(opts.limit || 50);
+    if (!values.length || values.some(value => !Number.isInteger(value) || !SIGNAL_TYPES.has(value))
+      || new Set(values).size !== values.length || values.length > 50
+      || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('Invalid signal request');
+    return client.getTokenSignalV2(opts.chain, [{ signal_type: values }]);
   }
   throw new Error('Unsupported radar read');
 }
