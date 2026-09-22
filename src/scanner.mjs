@@ -6,6 +6,8 @@ import { socialGate } from './social.mjs';
 import { tokenInfoPrice } from './gmgn.mjs';
 import { collectOutcomeSamples, dueOutcomeJobs, outcomeCoverage, sampleRejected } from './outcomes.mjs';
 import { tokenKey } from './local-store.mjs';
+import { DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
+import { productCapabilities } from './product/mode.mjs';
 
 const numberOrNull = value => {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
@@ -362,6 +364,21 @@ export class Scanner {
     this.state.value.supportedChains = this.supportedChains;
   }
 
+  discoverySources() {
+    const sources = [{
+      name: 'gmgn-completed',
+      read: async chain => ({ stage: 'completed', rows: await this.gmgn.discover(chain) })
+    }];
+    const capabilities = productCapabilities(this.config.productMode || 'risk-radar');
+    if (!capabilities.earlyDiscovery) return sources;
+    sources.push(
+      { name: 'gmgn-new', read: async chain => ({ stage: 'new_creation', rows: await this.gmgn.discoverStage(chain, 'new_creation', 80) }) },
+      { name: 'gmgn-near', read: async chain => ({ stage: 'near_completion', rows: await this.gmgn.discoverStage(chain, 'near_completion', 80) }) },
+      { name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) }
+    );
+    return sources;
+  }
+
   activateChain(chain, quiet = false) {
     const chainStates = { ...(this.state.value.chainStates || {}) };
     chainStates[this.activeChain] = scopeSnapshot(this.state.value);
@@ -470,8 +487,10 @@ export class Scanner {
         return;
       }
 
-      let discovered = await this.gmgn.discover(chain);
+      const discoveryResult = await new DiscoveryOrchestrator(this.discoverySources()).run(chain);
       if (this.gmgn.keyEpoch !== keyEpoch) return;
+      this.lastDiscoveryStages = discoveryResult.byStage;
+      let discovered = Object.values(discoveryResult.byStage).flat();
       const reviewRequests = [...this.requestedReviews.values()].filter(item => item.chain === chain
         && item.epoch === keyEpoch && Date.now() - item.at <= 10 * 60000);
       // Current discovery wins over a queued preview snapshot when both exist.
@@ -700,7 +719,12 @@ export class Scanner {
         address: String(item.row.address || ''), symbol: String(item.row.symbol || '?').slice(0, 30),
         marketCap: marketCap(item.row), createdAt: createdAt(item.row), reasons: item.screen.reasons
       }));
-      const discoveryHealth = this.gmgn.lastDiscoveryHealth || { complete: true, checkedAt: now };
+      const discoveryHealth = {
+        ...(this.gmgn.lastDiscoveryHealth || {}),
+        complete: (this.gmgn.lastDiscoveryHealth?.complete !== false) && discoveryResult.summary.complete,
+        checkedAt: discoveryResult.summary.checkedAt || now,
+        sources: discoveryResult.health
+      };
       const degraded = discoveryHealth.complete === false || auditHadError;
       const next = {
         ...prior,
