@@ -8,8 +8,10 @@ function finiteOrNull(value) {
 
 function labelOrNull(value) {
   if (value && typeof value === 'object') {
-    if (value.rug === true && value.success !== true) return 0;
-    if (value.success === true && value.rug !== true) return 1;
+    // Rug precedence keeps a pumped-then-dumped token in the sample as a
+    // negative instead of silently dropping the worst outcomes.
+    if (value.rug === true) return 0;
+    if (value.success === true) return 1;
     return null;
   }
   if (value === true || value === 1 || value === '1') return 1;

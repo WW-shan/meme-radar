@@ -96,3 +96,42 @@ test('outcome ingestion skips malformed creator identities instead of failing th
   updateOutcomePath(row, [row.samples.h24]);
   assert.equal(recordConfirmedCreatorOutcomes(new CreatorReputation(), [row]), 0);
 });
+
+test('unmeasured H24 samples never turn an unknown creator into a clean one', () => {
+  const now = 1_800_000_000_000;
+  const creatorAddress = `0x${'9'.repeat(40)}`;
+  const row = createOutcome({
+    chain: 'bsc', address, creatorAddress,
+    baselineAt: now - 25 * 60 * 60_000, baselinePrice: 1
+  });
+  row.samples.h24 = {
+    at: now, targetAt: now, collectedAt: now,
+    price: 3, return: null, failedRead: false, liquidityUsd: 1_000
+  };
+  updateOutcomePath(row, [row.samples.h24]);
+
+  const reputation = new CreatorReputation();
+  assert.equal(recordConfirmedCreatorOutcomes(reputation, [row]), 0,
+    'a sample without a measured return is not a confirmed outcome');
+  assert.equal(reputation.snapshot('bsc', creatorAddress, now + 1).known, false,
+    'an unmeasured sample must not make the creator look known and safe');
+});
+
+test('a confirmed rug is recorded even when the H24 return is unmeasured', () => {
+  const now = 1_800_000_000_000;
+  const creatorAddress = `0x${'7'.repeat(40)}`;
+  const row = createOutcome({
+    chain: 'bsc', address, creatorAddress,
+    baselineAt: now - 25 * 60 * 60_000, baselinePrice: 1
+  });
+  row.samples.h24 = {
+    at: now, targetAt: now, collectedAt: now,
+    price: .1, return: null, failedRead: false, liquidityUsd: 1_000
+  };
+  updateOutcomePath(row, [row.samples.h24]);
+  row.path.firstRugAt = now - 60_000;
+
+  const reputation = new CreatorReputation();
+  assert.equal(recordConfirmedCreatorOutcomes(reputation, [row]), 1);
+  assert.equal(reputation.snapshot('bsc', creatorAddress, now + 1).priorRugs, 1);
+});

@@ -188,3 +188,15 @@ test('walk-forward excludes observations after the declared cutoff', () => {
   assert.equal(report.excludedAfterCutoff, 1);
   assert.equal(report.metrics.sampleCount, 1);
 });
+
+test('a token that pumped and then dumped is scored as a rug, not as a success', () => {
+  const metrics = evaluateClassification([
+    { score: .9, label: { status: 'LABELED', label: 'RUG', success: true, rug: true } },
+    { score: .8, label: { status: 'LABELED', label: 'SUCCESS', success: true, rug: false } }
+  ], { threshold: .5 });
+  assert.equal(metrics.sampleCount, 2, 'a pumped-then-dumped token must stay in the sample instead of vanishing');
+  assert.equal(metrics.positiveCount, 1, 'rug precedence keeps the dumped token out of the positives');
+  assert.equal(metrics.negativeCount, 1);
+  assert.equal(metrics.recall, 1);
+  assert.equal(metrics.precision, .5, 'the high-score rug counts as a false positive, not as a success');
+});

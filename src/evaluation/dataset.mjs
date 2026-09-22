@@ -110,7 +110,9 @@ export function buildPointInTimeDataset(events, { cutoff, featureKeys = DEFAULT_
       successThreshold: labelOptions.successThreshold,
       rugThreshold: labelOptions.rugThreshold
     });
-    const binaryLabel = label.success === true ? 1 : label.rug === true ? 0 : null;
+    // Rug precedence matches assignLabel: a token that dumped past the rug
+    // threshold must never be counted as a success just because it pumped first.
+    const binaryLabel = label.rug === true ? 0 : label.success === true ? 1 : null;
     rows.push({
       observedAt,
       chain: text(launch.chain, 32),

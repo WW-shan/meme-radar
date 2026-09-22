@@ -304,7 +304,11 @@ export function confirmedCreatorOutcome(row = {}) {
     || sample?.failedRead === true || positiveOrNull(sample?.price) === null) return null;
   const benchmark = numberOrNull(sample.return);
   const firstRugAt = numberOrNull(row.path?.firstRugAt, 0);
-  const outcome = firstRugAt !== null ? 'rug' : benchmark !== null && benchmark >= 1 ? 'success' : 'unknown';
+  // Only confirmed outcomes enter creator history: without a measured return and
+  // without rug evidence we cannot tell success from failure, and recording it as
+  // a clean launch would turn "unknown" into "safe".
+  if (benchmark === null && firstRugAt === null) return null;
+  const outcome = firstRugAt !== null ? 'rug' : benchmark >= 1 ? 'success' : 'unknown';
   return {
     chain,
     creator,

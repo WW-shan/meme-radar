@@ -153,3 +153,28 @@ test('dataset CLI converts append-only events into deterministic JSON', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('point-in-time labels keep rug precedence when a token pumps before it dumps', () => {
+  const launchAt = 1_000;
+  const outcomeAt = launchAt + 24 * 60 * 60_000;
+  const address = '0x' + '9'.repeat(40);
+  const rows = buildPointInTimeDataset([
+    {
+      eventId: 'launch', source: 'gmgn', chain: 'bsc', stage: 'new_creation', observedAt: launchAt,
+      token: { address, symbol: 'PUMP' }, raw: {}, normalized: { symbol: 'PUMP', liquidity: 1_000 }
+    },
+    {
+      eventId: 'outcome', source: 'radar-outcome', chain: 'bsc', stage: 'outcome', observedAt: outcomeAt,
+      token: { address, symbol: 'PUMP' },
+      raw: { baselineAt: launchAt, baselinePrice: 1, path: { observations: [
+        { at: launchAt + 60_000, price: 3, failedRead: false },
+        { at: outcomeAt - 60_000, price: .4, failedRead: false }
+      ] } },
+      normalized: { kind: 'outcome', riskScore: .5 }
+    }
+  ], { cutoff: outcomeAt, featureKeys: ['symbol'] });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].label.label, 'RUG');
+  assert.equal(rows[0].binaryLabel, 0, 'binaryLabel must agree with the label, not flip it to success');
+});
