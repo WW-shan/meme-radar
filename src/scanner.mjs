@@ -11,6 +11,7 @@ import { productCapabilities } from './product/mode.mjs';
 import { scoreRisk } from './analytics/risk-engine.mjs';
 import { RiskMemory } from './analytics/risk-memory.mjs';
 import { LifecycleTracker, LIFECYCLE_ORDER } from './discovery/lifecycle.mjs';
+import { calibrationReport } from './evaluation/calibration.mjs';
 
 const numberOrNull = value => {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
@@ -29,7 +30,6 @@ const OUTCOME_WINDOWS = Object.freeze({
   h24: 24 * 60 * 60_000
 });
 const OUTCOME_SAMPLE_GRACE_MS = 5 * 60_000;
-const REQUIRED_CALIBRATION_WINDOWS = Object.freeze(['m30', 'h2', 'h24']);
 const CHAIN_SCOPE_KEYS = Object.freeze([
   'scanCount', 'discoveredCount', 'prequalifiedCount', 'candidates', 'rejected',
   'auditQueue', 'auditQueueStats', 'outcomes', 'outcomeSummary', 'sourceHealth', 'lifecycle',
@@ -308,7 +308,9 @@ export function upsertOutcome(outcomes, candidate, now) {
     initialDecision: 'X_REVIEW',
     latestDecision: candidate.status,
     latestFailed: candidate.deep?.failed || [],
-    lastAuditedAt: candidate.auditedAt
+    lastAuditedAt: candidate.auditedAt,
+    riskScore: numberOrNull(candidate.risk?.score),
+    riskVersion: candidate.risk?.version
   }));
   return outcomes;
 }
@@ -317,6 +319,16 @@ function median(values) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
   return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2;
+}
+
+function outcomeCalibrationRows(rows) {
+  return rows.map(row => {
+    const score = numberOrNull(row.riskScore ?? row.risk?.score);
+    if (score === null) return null;
+    const complete = row.path?.coverage?.complete === true;
+    if (!complete) return { score, label: null };
+    return { score, label: numberOrNull(row.path?.firstRugAt) !== null ? 1 : 0 };
+  }).filter(Boolean);
 }
 
 export function summarizeOutcomes(outcomes) {
@@ -354,6 +366,15 @@ export function summarizeOutcomes(outcomes) {
       readOnly: true
     }];
   }));
+  const calibrationRows = outcomeCalibrationRows(rows);
+  const calibrationCutoff = rows.map(item => numberOrNull(item.lastSeenAt ?? item.baselineAt)).filter(value => value !== null).sort((a, b) => b - a)[0] ?? null;
+  const calibrationVersion = rows.map(item => item.riskVersion).find(value => typeof value === 'string' && value) || 'risk-engine-v1';
+  const lastCalibratedAt = rows.map(item => numberOrNull(item.lastCalibratedAt)).filter(value => value !== null).sort((a, b) => b - a)[0] ?? null;
+  const calibration = calibrationReport(calibrationRows, {
+    modelVersion: calibrationVersion,
+    dataCutoff: calibrationCutoff,
+    lastCalibratedAt
+  });
   const pathRows = rows.filter(item => item.path && Array.isArray(item.path.observations));
   const completePaths = pathRows.filter(item => item.path.coverage?.complete === true).length;
   const maxDrawdowns = pathRows.map(item => numberOrNull(item.path.maxDrawdown)).filter(value => value !== null);
@@ -375,7 +396,19 @@ export function summarizeOutcomes(outcomes) {
   return {
     tracked: rows.length,
     minimumSample: 50,
-    calibrationReady: REQUIRED_CALIBRATION_WINDOWS.every(key => completed[key] >= 50),
+    calibrationReady: calibration.ready,
+    canStartObservation: calibration.canStartObservation,
+    calibrationMinimumSample: calibration.minimumSample,
+    calibrationStatus: calibration.status,
+    calibrationSampleCount: calibration.sampleCount,
+    expectedCalibrationError: calibration.expectedCalibrationError,
+    maximumCalibrationError: calibration.maximumCalibrationError,
+    brierScore: calibration.brierScore,
+    calibrationCutoff: calibration.dataCutoff,
+    modelVersion: calibration.modelVersion,
+    lastCalibratedAt: calibration.lastCalibratedAt,
+    calibrationBins: calibration.bins,
+    calibration,
     completed5m: completed.m5,
     completed15m: completed.m15,
     completed30m: completed.m30,
@@ -412,7 +445,8 @@ function emptyScope() {
     candidates: [], rejected: [], auditQueue: [], outcomes: [],
     auditQueueStats: { total: 0, retained: 0, due: 0, neverAudited: 0, waitingRecheck: 0, hardReject: 0, chainReview: 0, estimatedMinutes: 0 },
     outcomeSummary: {
-      minimumSample: 50, calibrationReady: false,
+      minimumSample: 50, calibrationReady: false, canStartObservation: false,
+      calibrationMinimumSample: 500, calibrationStatus: 'INSUFFICIENT', calibrationSampleCount: 0,
       tracked: 0, completed5m: 0, completed15m: 0, completed30m: 0,
       completed1h: 0, completed2h: 0, completed6h: 0, completed24h: 0
     },

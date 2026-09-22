@@ -34,7 +34,8 @@ function defaultState() {
     auditQueueStats: { total: 0, due: 0, neverAudited: 0, waitingRecheck: 0 },
     outcomes: [],
     outcomeSummary: {
-      minimumSample: 50, calibrationReady: false,
+      minimumSample: 50, calibrationReady: false, canStartObservation: false,
+      calibrationMinimumSample: 500, calibrationStatus: 'INSUFFICIENT', calibrationSampleCount: 0,
       tracked: 0, completed5m: 0, completed15m: 0, completed30m: 0,
       completed1h: 0, completed2h: 0, completed6h: 0, completed24h: 0
     },

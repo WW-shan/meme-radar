@@ -495,6 +495,18 @@ function publicExecutionEstimates(source = {}) {
   }));
 }
 
+function publicCalibrationBins(source) {
+  return (Array.isArray(source) ? source : []).slice(0, 50).map(row => ({
+    index: finite(row?.index),
+    min: finiteOrNull(row?.min),
+    max: finiteOrNull(row?.max),
+    count: finite(row?.count),
+    confidence: finiteOrNull(row?.confidence),
+    accuracy: finiteOrNull(row?.accuracy),
+    gap: finiteOrNull(row?.gap)
+  }));
+}
+
 function publicOutcomeSummary(source = {}) {
   const sampleCoverage = publicOutcomeCoverage(source.sampleCoverage || source.coverage || {});
   return {
@@ -503,6 +515,17 @@ function publicOutcomeSummary(source = {}) {
       'completed2h', 'completed6h', 'completed24h'
     ]),
     calibrationReady: source.calibrationReady === true,
+    canStartObservation: source.canStartObservation === true,
+    calibrationMinimumSample: finite(source.calibrationMinimumSample ?? 500),
+    calibrationStatus: text(source.calibrationStatus, 24) || 'INSUFFICIENT',
+    calibrationSampleCount: finite(source.calibrationSampleCount),
+    expectedCalibrationError: finiteOrNull(source.expectedCalibrationError),
+    maximumCalibrationError: finiteOrNull(source.maximumCalibrationError),
+    brierScore: finiteOrNull(source.brierScore),
+    calibrationCutoff: finiteOrNull(source.calibrationCutoff),
+    modelVersion: text(source.modelVersion, 64),
+    lastCalibratedAt: finiteOrNull(source.lastCalibratedAt),
+    calibrationBins: publicCalibrationBins(source.calibrationBins),
     averageReturn5m: finiteOrNull(source.averageReturn5m),
     averageReturn15m: finiteOrNull(source.averageReturn15m),
     averageReturn30m: finiteOrNull(source.averageReturn30m),

@@ -153,7 +153,7 @@ test('only X_REVIEW creates a shadow cohort while later decisions still update i
   assert.deepEqual(updateOutcomeTracking(legacyMixedCohort, new Map(), now, 7 * 24 * 60 * 60_000), []);
 });
 
-test('calibration readiness requires 50 completed samples at all three declared horizons', () => {
+test('50 completed outcome samples never mark a model as calibrated', () => {
   const rows = Array.from({ length: 50 }, (_, index) => ({
     address: `token-${index}`,
     initialDecision: 'X_REVIEW',
@@ -167,7 +167,10 @@ test('calibration readiness requires 50 completed samples at all three declared 
   assert.equal(incomplete.calibrationReady, false);
 
   rows[49].samples.h24 = { return: .03 };
-  assert.equal(summarizeOutcomes(rows).calibrationReady, true);
+  const complete = summarizeOutcomes(rows);
+  assert.equal(complete.calibrationReady, false);
+  assert.equal(complete.minimumSample, 50);
+  assert.equal(complete.calibrationMinimumSample, 500);
 });
 
 test('Solana outcome matching preserves base58 address case while EVM keys remain case-insensitive', () => {
