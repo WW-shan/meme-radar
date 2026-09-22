@@ -287,3 +287,19 @@ test('deep screen hard-fails unrenounced ownership and unlocked LP', () => {
   assert.ok(result.failed.includes('lpLocked'));
   assert.ok(result.failed.includes('wash'));
 });
+
+test('creator reputation is point-in-time, chain-scoped, and never treats missing history as safe', () => {
+  const discovery = { creator_address: address, smart_degen_count: 3, renowned_count: 0 };
+  const unknown = marketBehaviorScreen({
+    discovery, creatorReputation: { known: false, priorLaunches: 0, priorRugRate: null }, nowMs: nowSec * 1000
+  }, config);
+  assert.ok(unknown.unknownFields.includes('marketBehavior.creatorReputation'));
+  const risky = marketBehaviorScreen({
+    discovery,
+    creatorReputation: { known: true, priorLaunches: 4, priorRugs: 2, priorRugRate: .5, priorSuccessfulLaunches: 1, priorMedianTimeToRug: 1000, confidence: 1 },
+    nowMs: nowSec * 1000
+  }, config);
+  assert.equal(risky.pass, false);
+  assert.match(risky.downgradeReasons.join(' '), /rug 率过高/);
+  assert.equal(risky.evidence.priorLaunches, 4);
+});

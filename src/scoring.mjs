@@ -326,7 +326,7 @@ function normalizedCreatorStatus(value) {
   return 'UNKNOWN';
 }
 
-export function marketBehaviorScreen({ discovery = {}, info = {}, holders = [], observation = null, nowMs = Date.now() }, config) {
+export function marketBehaviorScreen({ discovery = {}, info = {}, holders = [], observation = null, nowMs = Date.now(), creatorReputation = null }, config) {
   const price = info.price || {};
   const tagEvidence = taggedWalletSignals(holders, config.chain);
   const aggregateSmart = optionalCount(first(info.wallet_tags_stat?.smart_wallets, discovery.smart_degen_count));
@@ -363,6 +363,23 @@ export function marketBehaviorScreen({ discovery = {}, info = {}, holders = [], 
     ? creatorGraduatedCount / creatorCreatedCount : null;
   const creatorDeletedPosts = optionalCount(info.dev?.twitter_del_post_token_count);
   const creatorPromotedTokens = optionalCount(info.dev?.twitter_create_token_count);
+  const creatorAddress = normalizeAddress(first(discovery.creator_address, discovery.creator,
+    info.dev?.creator_address, info.dev?.address), config.chain);
+  let reputation = null;
+  if (creatorAddress && creatorReputation) {
+    try {
+      reputation = typeof creatorReputation.snapshot === 'function'
+        ? creatorReputation.snapshot(config.chain, creatorAddress, nowMs)
+        : creatorReputation;
+    } catch {
+      reputation = null;
+    }
+  }
+  const priorLaunches = optionalCount(reputation?.priorLaunches);
+  const priorRugRate = optionalRate(reputation?.priorRugRate);
+  const priorMedianTimeToRug = optionalNonNegativeNumber(reputation?.priorMedianTimeToRug);
+  const priorSuccessfulLaunches = optionalCount(reputation?.priorSuccessfulLaunches);
+  const creatorReputationKnown = reputation?.known === true;
 
   const txTotal = buys5m !== null && sells5m !== null ? buys5m + sells5m : null;
   const swapCountConsistent = swaps5m === null || txTotal === null
@@ -405,7 +422,8 @@ export function marketBehaviorScreen({ discovery = {}, info = {}, holders = [], 
     oldSuddenPump ? '老盘5分钟突然大幅拉升，等待避免追高' : null,
     fadingPump ? '价格上涨但连续缩量，等待确认承接' : null,
     repeatLauncherWithWeakHistory ? '创建者反复发币且可验证历史质量偏弱' : null,
-    repeatLauncherStillHolding ? '创建者反复发币且当前仍持币' : null
+    repeatLauncherStillHolding ? '创建者反复发币且当前仍持币' : null,
+    priorRugRate !== null && priorRugRate > .20 ? '创建者历史 rug 率过高' : null
   ].filter(Boolean);
   const warnings = [
     creatorLaunchCount !== null && creatorLaunchCount >= 10 ? `创建者历史发币${creatorLaunchCount}个` : null,
@@ -425,7 +443,8 @@ export function marketBehaviorScreen({ discovery = {}, info = {}, holders = [], 
     volume5m === null ? 'marketBehavior.volume5m' : null,
     priceChange5m === null ? 'marketBehavior.priceChange5m' : null,
     ageSec === null ? 'marketBehavior.age' : null,
-    creatorLaunchCount === null ? 'marketBehavior.creatorLaunchCount' : null
+    creatorLaunchCount === null ? 'marketBehavior.creatorLaunchCount' : null,
+    creatorAddress && !creatorReputationKnown ? 'marketBehavior.creatorReputation' : null
   ].filter(Boolean);
   return {
     pass: downgradeReasons.length === 0,
@@ -437,7 +456,9 @@ export function marketBehaviorScreen({ discovery = {}, info = {}, holders = [], 
       holderCount, holderSampleDistinct, swaps5m, buys5m, sells5m, volume5m, priceChange5m,
       swapsPerHolder5m, swapCountConsistent, holderSampleConsistent, sellBuyRatio, ageSec,
       creatorStatus, creatorLaunchCount, creatorCreatedCount, creatorGraduatedCount,
-      creatorOpenRatio, creatorDeletedPosts, creatorPromotedTokens
+      creatorOpenRatio, creatorDeletedPosts, creatorPromotedTokens, creatorAddress,
+      priorLaunches, priorRugRate, priorMedianTimeToRug, priorSuccessfulLaunches,
+      creatorReputationKnown, creatorReputationConfidence: reputation?.confidence ?? null
     }
   };
 }
@@ -540,7 +561,7 @@ export function empiricalSellability({ info, discovery, traders, nowSec = Date.n
   };
 }
 
-export function deepScreen({ discovery, audit, nowMs = Date.now() }, config) {
+export function deepScreen({ discovery, audit, nowMs = Date.now(), creatorReputation = null }, config) {
   const info = audit.info || {}, pool = audit.pool || {};
   const sec = securityView(audit.security, discovery, info);
   const isSol = lower(config.chain) === 'sol';
@@ -587,7 +608,7 @@ export function deepScreen({ discovery, audit, nowMs = Date.now() }, config) {
   const observation = observeFiveMinutes(audit.candles, nowMs);
   const chartRisk = chartRiskScreen(audit.candles, nowMs);
   const marketBehavior = marketBehaviorScreen({
-    discovery, info, holders: audit.holders, observation, nowMs
+    discovery, info, holders: audit.holders, observation, nowMs, creatorReputation
   }, config);
   const sellability = empiricalSellability({ info, discovery, traders: audit.traders, nowSec: nowMs / 1000, chain: config.chain });
   const exactNotHoneypot = honeypot === false;

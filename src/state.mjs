@@ -38,6 +38,7 @@ function defaultState() {
     },
     sourceHealth: {},
     lifecycle: [],
+    creatorHistory: [],
     events: []
   };
 }

@@ -347,10 +347,11 @@ function addEvent(events, type, message, chain, data = {}) {
 }
 
 export class Scanner {
-  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [] }) {
+  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [], creatorReputation = null }) {
     this.gmgn = gmgn;
     this.secondary = secondary;
     this.chainSources = chainSources;
+    this.creatorReputation = creatorReputation;
     this.state = state;
     this.controls = controls;
     this.config = settings;
@@ -580,7 +581,7 @@ export class Scanner {
         try {
           const lifecycleStage = item.lifecycleStage === 'signal' ? 'new_creation' : item.lifecycleStage || 'completed';
           const auditOptions = {
-            shouldStopEarly: partial => classifyDeepResult(deepScreen({ discovery: item.row, audit: partial }, settings), partial._meta).status === 'HARD_REJECT'
+            shouldStopEarly: partial => classifyDeepResult(deepScreen({ discovery: item.row, audit: partial, creatorReputation: this.creatorReputation }, settings), partial._meta).status === 'HARD_REJECT'
           };
           const audit = typeof this.gmgn.auditStage === 'function'
             ? await this.gmgn.auditStage(token.address, lifecycleStage, Math.floor(Date.now() / 1000), chain, auditOptions)
@@ -593,7 +594,7 @@ export class Scanner {
             if (freshPrice && supply > 0) token.marketCap = visibleToken.marketCap = freshPrice * supply;
             token.liquidity = visibleToken.liquidity = num(audit.info?.liquidity, token.liquidity);
           }
-          const deep = deepScreen({ discovery: item.row, audit }, settings);
+          const deep = deepScreen({ discovery: item.row, audit, creatorReputation: this.creatorReputation }, settings);
           if (deep.chartRisk.status === 'REJECT') {
             riskExclusions[tokenKey(chain, token.address)] = { chain, address: token.address,
               at: Date.now(), version: CHART_RISK_VERSION, codes: deep.chartRisk.codes,
@@ -781,6 +782,7 @@ export class Scanner {
         outcomes,
         outcomeSummary: summarizeOutcomes(outcomes),
         lifecycle: lifecycle.snapshot(),
+        creatorHistory: this.creatorReputation?.serialize?.() || prior.creatorHistory || [],
         sourceHealth: { discovery: discoveryHealth, lastAudit: lastAuditHealth, lastSecondary: lastSecondaryHealth },
         xCapability: { available: false, mode: 'manual', reason: 'X由用户点击链接人工复核' },
         policy: {
