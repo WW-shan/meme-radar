@@ -117,6 +117,35 @@ function publicToken(row, screen, chain) {
   };
 }
 
+function unavailableDeep(reason = 'GMGN深度审计不可用') {
+  const checks = Object.fromEntries([
+    'openSource', 'ownerRenounced', 'lpLocked', 'notHoneypot', 'tax', 'rug',
+    'concentration', 'dev', 'insider', 'bundler', 'sniper', 'wash', 'liquidity',
+    'wallets', 'entityGraph', 'observation', 'chartRisk', 'marketBehavior'
+  ].map(name => [name, 'UNAVAILABLE']));
+  return {
+    availability: 'UNAVAILABLE',
+    chainPass: false,
+    failed: ['deepAudit'],
+    checks,
+    unknownFields: ['deepAudit'],
+    blockingUnknownFields: ['deepAudit'],
+    wallets: { pass: false, dataComplete: false, unknownFields: ['holders'] },
+    observation: { pass: false, status: 'UNAVAILABLE', reason, unknownFields: ['candles'] },
+    chartRisk: { version: 0, status: 'UNAVAILABLE', pass: false, reasons: [reason], unknownFields: ['chartRisk.candles'] },
+    marketBehavior: { pass: false, status: 'UNAVAILABLE', unknownFields: ['traders', 'holders'], downgradeReasons: [reason] },
+    sellability: { pass: false, unknownFields: ['traders'], evidenceType: 'UNAVAILABLE', evidenceNote: reason },
+    honeypotEvidence: '深度审计不可用',
+    security: {
+      openSource: 'UNAVAILABLE', ownerRenounced: 'UNAVAILABLE', evmOwnerRenounced: 'UNAVAILABLE',
+      renouncedMint: 'UNAVAILABLE', renouncedFreezeAccount: 'UNAVAILABLE', honeypot: 'UNAVAILABLE',
+      buyTax: null, sellTax: null, taxDifference: null, rugRatio: null, top10: null,
+      devHold: null, insider: null, bundler: null, sniperHold: null, wash: null,
+      lockRate: null, lpBurned: false, liquidity: null
+    }
+  };
+}
+
 function socialFrom(token) {
   const hints = token.socialHints || {};
   return {
@@ -501,13 +530,12 @@ export class Scanner {
       read: async chain => ({ stage: 'completed', rows: await this.gmgn.discover(chain) })
     }];
     const capabilities = productCapabilities(this.config.productMode || 'risk-radar');
-    if (!capabilities.earlyDiscovery) return sources;
-    sources.push(
+    if (capabilities.earlyDiscovery) sources.push(
       { name: 'gmgn-new', read: async chain => ({ stage: 'new_creation', rows: await this.gmgn.discoverStage(chain, 'new_creation', 80) }) },
       { name: 'gmgn-near', read: async chain => ({ stage: 'near_completion', rows: await this.gmgn.discoverStage(chain, 'near_completion', 80) }) },
-      { name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) },
-      ...(this.chainSources || [])
+      { name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) }
     );
+    sources.push(...(this.chainSources || []));
     return sources;
   }
 
@@ -603,7 +631,8 @@ export class Scanner {
     this.state.value.generatedAt = startedAt;
     this.state.save();
     try {
-      if (!await this.gmgn.configured()) {
+      const gmgnConfigured = await this.gmgn.configured();
+      if (!gmgnConfigured && !(this.chainSources || []).length) {
         const next = {
           ...prior,
           status: 'GMGN_AUTH_REQUIRED',
@@ -700,7 +729,50 @@ export class Scanner {
       let auditHadError = false;
       let auditsCompleted = 0;
 
-      for (const queued of selected) {
+      if (!gmgnConfigured) {
+        const checkedAt = Date.now();
+        lastAuditHealth = {
+          available: false, complete: false, status: 'UNAVAILABLE',
+          code: 'GMGN_AUTH_REQUIRED', checkedAt, endpoints: {}
+        };
+        auditHadError = true;
+        for (const item of prequalified) {
+          const previousCandidate = candidatesByAddress.get(addressKey(item.row.address));
+          if (previousCandidate?.status === 'X_REVIEW') continue;
+          const token = publicToken(item.row, item.screen, chain);
+          const visibleToken = cleanCandidate(token);
+          const lifecycleStage = item.lifecycleStage || 'completed';
+          const deep = unavailableDeep('GMGN只读数据源不可用；本候选仅保留直接链上事件');
+          const risk = scoreRisk({ baseStatus: 'WAIT_RECHECK', unknownFields: ['deepAudit'] });
+          const candidate = {
+            ...visibleToken,
+            status: 'WAIT_RECHECK',
+            auditedAt: checkedAt,
+            staleAt: checkedAt + settings.staleCandidateMs,
+            deep,
+            social: socialFrom(token),
+            secondary: null,
+            decisionReason: 'GMGN深度审计不可用，等待数据源恢复后复查',
+            auditHealth: lastAuditHealth,
+            lifecycleStage,
+            risk,
+            coverage: coverageFor(chain),
+            info: { twitter: token.twitter, website: '' }
+          };
+          candidate.reviewEvidence = reviewRevision(candidate);
+          candidate.reviewRevision = previousCandidate?.reviewEvidence === candidate.reviewEvidence
+            ? previousCandidate.reviewRevision : `${candidate.reviewEvidence}-${checkedAt}`;
+          candidatesByAddress.set(addressKey(token.address), candidate);
+          const queueItem = queueByAddress.get(addressKey(token.address));
+          if (queueItem) {
+            queueItem.status = 'WAIT_RECHECK';
+            queueItem.nextAuditAt = checkedAt + settings.dynamicRecheckMs;
+          }
+          events = addEvent(events, 'DEEP_AUDIT_UNAVAILABLE', `${token.symbol}：深度审计不可用，仅保留链上事件`, chain, { address: token.address });
+        }
+      }
+
+      for (const queued of gmgnConfigured ? selected : []) {
         if (auditsCompleted && Date.now() - startedAt >= (settings.auditCycleBudgetMs || 80_000)) break;
         if (this.gmgn.nextAllowedAt > Date.now() || this.gmgn.disabled) break;
         const item = auditable.find(entry => addressKey(entry.row.address) === addressKey(queued.address));
@@ -908,8 +980,11 @@ export class Scanner {
         ...prior,
         version: 2,
         status: degraded ? 'DEGRADED' : 'RUNNING',
-        authMessage: '',
-        error: degraded ? '本轮部分数据不完整，系统会自动复查；页面不会把未知值当作安全。' : '',
+        authMessage: gmgnConfigured ? '' : 'GMGN只读数据源不可用；直接链上事件仍会保留，深度字段为 UNAVAILABLE。',
+        error: degraded ? gmgnConfigured
+          ? '本轮部分数据不完整，系统会自动复查；页面不会把未知值当作安全。'
+          : 'GMGN深度审计不可用；直接链上事件不会被视为安全或通过。'
+          : '',
         retryAt: num(this.gmgn.nextAllowedAt),
         activeChain: chain,
         pendingChain: '',

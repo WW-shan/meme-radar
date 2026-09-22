@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { legacyGmgnApiKey, normalizeGmgnApiKey } from './gmgn-key-store.mjs';
+import { GmgnAdapter } from './gmgn-adapter.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -220,6 +221,10 @@ export class GmgnClient {
 
   async configured() {
     return Boolean(this.apiKey());
+  }
+
+  async probe(options = {}) {
+    return new GmgnAdapter({ client: this }).probe(options);
   }
 
   resetCredentials({ disabled = false } = {}) {

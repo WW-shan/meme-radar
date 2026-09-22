@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { GmgnAdapter } from '../src/gmgn-adapter.mjs';
 
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,6 +21,53 @@ export async function dependenciesReady(root = projectRoot) {
     await import(pathToFileURL(path.join(root, 'node_modules/gmgn-cli/dist/output.js')).href);
     return true;
   } catch { return false; }
+}
+
+export function fallbackSourceStatus(env = process.env) {
+  if (env.RADAR_CHAIN_EVENTS !== '1') {
+    return [{ name: 'direct-chain-sources', status: 'DISABLED', reason: 'RADAR_CHAIN_EVENTS 未设置为 1' }];
+  }
+  const sources = [];
+  const solanaReady = Boolean(env.SOLANA_RPC_URL && env.SOLANA_MIGRATION_AUTHORITY && env.SOLANA_MIGRATION_PROGRAM);
+  sources.push({
+    name: 'solana-migration',
+    status: solanaReady ? 'AVAILABLE' : 'UNCONFIGURED',
+    reason: solanaReady ? '' : '需要 SOLANA_RPC_URL、SOLANA_MIGRATION_AUTHORITY 和 SOLANA_MIGRATION_PROGRAM'
+  });
+  for (const [chain, variable] of [['bsc', 'BSC_RPC_URL'], ['base', 'BASE_RPC_URL'], ['eth', 'ETH_RPC_URL']]) {
+    sources.push({
+      name: `evm-${chain}-pool`,
+      status: 'UNCONFIGURED',
+      reason: env[variable] ? 'factory 地址与 topic 尚未配置' : `需要 ${variable} 和 factory 配置`
+    });
+  }
+  return sources;
+}
+
+export function formatSetupReport(adapter, fallbacks = fallbackSourceStatus()) {
+  const missing = Array.isArray(adapter?.missing) && adapter.missing.length ? adapter.missing.join(', ') : '无';
+  const fallback = fallbacks.length
+    ? fallbacks.map(source => `${source.name}=${source.status}${source.reason ? ` (${source.reason})` : ''}`).join('; ')
+    : '无';
+  return [
+    `GMGN适配器：${adapter?.status || 'INCOMPATIBLE'}${adapter?.reason ? ` (${adapter.reason})` : ''}`,
+    `缺失方法：${missing}`,
+    `降级来源：${fallback}`
+  ].join('\n');
+}
+
+export async function inspectGmgnAdapter({ root = projectRoot } = {}) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const expectedVersion = manifest.dependencies?.['gmgn-cli'] || '';
+  const packageRoot = path.join(root, 'node_modules', 'gmgn-cli');
+  return new GmgnAdapter({
+    importClient: async () => {
+      const installed = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+      const { OpenApiClient } = await import(pathToFileURL(path.join(packageRoot, 'dist/client/OpenApiClient.js')).href);
+      const client = new OpenApiClient({ apiKey: 'adapter-probe-read-only', host: 'https://openapi.gmgn.ai' });
+      return { client, version: installed.version };
+    }
+  }).probe({ expectedVersion });
 }
 
 function npmEntry() {
@@ -80,6 +128,17 @@ export async function ensureDependencies({ checkOnly = false } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
-  try { await ensureDependencies({ checkOnly: process.argv.includes('--check') }); console.log('运行环境已就绪。'); }
+  try {
+    await ensureDependencies({ checkOnly: process.argv.includes('--check') });
+    const adapter = await inspectGmgnAdapter();
+    const fallbacks = fallbackSourceStatus(process.env);
+    console.log(formatSetupReport(adapter, fallbacks));
+    if (adapter.status !== 'OK') {
+      console.error('GMGN适配器不可用；请确认 gmgn-cli 版本和只读方法契约。');
+      process.exitCode = 1;
+    } else {
+      console.log('运行环境已就绪。');
+    }
+  }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

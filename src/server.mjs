@@ -61,7 +61,9 @@ function publicError(status) {
 }
 
 function publicChecks(source = {}) {
-  return Object.fromEntries(CHECK_FIELDS.map(key => [key, source[key] === true]));
+  return Object.fromEntries(CHECK_FIELDS.map(key => [key,
+    source[key] === true || source[key] === false ? source[key]
+      : String(source[key]).toUpperCase() === 'UNAVAILABLE' ? 'UNAVAILABLE' : false]));
 }
 
 function publicSecondary(source = {}) {
@@ -197,7 +199,8 @@ function publicCandidate(row = {}) {
     status: ['X_REVIEW', 'QUALIFIED'].includes(row.status) && !currentRules ? 'WAIT_RECHECK' : publicCode(row.risk?.band || row.status),
     auditedAt: finite(row.auditedAt),
     updatedAt: finite(row.updatedAt ?? row.auditedAt),
-    auditStatus: text(row.auditStatus || (row.auditHealth?.complete === false ? 'DEGRADED' : 'COMPLETE'), 24),
+    auditStatus: text(row.auditStatus || (row.auditHealth?.available === false
+      ? 'UNAVAILABLE' : row.auditHealth?.complete === false ? 'DEGRADED' : 'COMPLETE'), 24),
     unknownFieldCount,
     coverage,
     staleAt: finite(row.staleAt),
@@ -208,6 +211,7 @@ function publicCandidate(row = {}) {
     decisionReason: ['X_REVIEW', 'QUALIFIED'].includes(row.status) && !currentRules
       ? '风险规则已升级，等待重新核验' : text(row.decisionReason, 120),
     deep: {
+      availability: publicCode(deep.availability || (row.auditHealth?.available === false ? 'UNAVAILABLE' : 'AVAILABLE')),
       chainPass: deep.chainPass === true && currentRules,
       chartRisk: { version: finite(deep.chartRisk?.version), status: text(deep.chartRisk?.status, 32),
         pass: deep.chartRisk?.pass === true, from: finite(deep.chartRisk?.from), to: finite(deep.chartRisk?.to),
