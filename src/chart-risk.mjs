@@ -1,7 +1,8 @@
 // A conservative preference filter, not a fraud diagnosis. Reuses the existing
 // completed 1m sample; it makes no claim about unseen or second-level history.
 export const CHART_RISK_VERSION = 1;
-export function applyRiskExclusion(row, exclusions = {}, chain = row.chain) {
+export function applyRiskExclusion(row, exclusions = {}, chain = row?.chain) {
+  if (!row || typeof row !== 'object') return row;
   const address = String(row.address || '').trim();
   const held = exclusions[`${chain}:${chain === 'sol' ? address : address.toLowerCase()}`];
   if (!held) return row;

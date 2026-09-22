@@ -25,6 +25,7 @@ export class DiscoveryOrchestrator {
           throw Object.assign(new Error('unknown source stage'), { code: 'UNKNOWN_STAGE' });
         }
         const rows = Array.isArray(result.rows) ? result.rows : [];
+        let accepted = 0;
         for (const row of rows) {
           if (!row?.address) throw Object.assign(new Error('source row has no address'), { code: 'INVALID_SOURCE_ROW' });
           const key = addressKey(chain, row.address);
@@ -36,9 +37,10 @@ export class DiscoveryOrchestrator {
             });
           } catch {}
           byStage[result.stage].push(row);
+          accepted++;
         }
         health[source.name] = sourceHealthRecord({
-          status: 'OK', count: byStage[result.stage].length,
+          status: 'OK', count: accepted,
           latencyMs: Date.now() - startedAt, checkedAt: Date.now()
         });
       } catch (error) {

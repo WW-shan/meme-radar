@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { estimateExecution } from './execution-model.mjs';
+import { creatorIdentityValid } from './analytics/creator-reputation.mjs';
 
 export const horizons = Object.freeze({ m5: 300_000, m15: 900_000, m30: 1800_000, h1: 3600_000, h2: 7200_000, h6: 21600_000, h24: 86400_000 });
 export const OUTCOME_PATH_VERSION = 'outcome-path-v1';
@@ -299,7 +300,7 @@ export function confirmedCreatorOutcome(row = {}) {
   const baselineAt = numberOrNull(row.baselineAt, 0);
   const sample = row.samples?.h24;
   const observedAt = numberOrNull(sample?.collectedAt ?? sample?.at, 0);
-  if (!creator || !token || baselineAt === null || observedAt === null
+  if (!creator || !token || !creatorIdentityValid(chain, creator) || baselineAt === null || observedAt === null
     || sample?.failedRead === true || positiveOrNull(sample?.price) === null) return null;
   const benchmark = numberOrNull(sample.return);
   const firstRugAt = numberOrNull(row.path?.firstRugAt, 0);

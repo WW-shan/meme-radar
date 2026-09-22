@@ -193,3 +193,15 @@ test('settings endpoints validate origin/schema; view/export exposes whitelisted
   assert.doesNotMatch(JSON.stringify(exported),/do-not-leak/);
   assert.equal((await dispatch(server,'GET','/api/status?chain=not-a-chain')).status,400);
 });
+
+test('malformed local preferences fall back to safe scan and annotation state', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-preferences-malformed-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, 'preferences.json'), JSON.stringify({
+    enabledChains: 2,
+    annotations: null
+  }));
+  const controls = new RadarControls(directory, ['sol', 'bsc'], 'bsc');
+  assert.deepEqual(controls.value.enabledChains, ['bsc']);
+  assert.deepEqual(controls.value.annotations, {});
+});

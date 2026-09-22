@@ -107,16 +107,31 @@ export class EntityGraph {
 }
 
 export function entityMetrics(graph, wallets, holdRates, { dataComplete = true } = {}) {
-  const cluster = graph.clusterFor(wallets[0] || '');
-  const entityWallets = [...cluster].filter(wallet => wallets.includes(wallet));
-  const entityHoldRate = graph.holdRate(entityWallets, holdRates);
-  const bundleHoldRate = entityWallets.length > 1 ? entityHoldRate : 0;
+  const selected = uniqueWallets(wallets);
+  const groups = new Map();
+  for (const wallet of selected) {
+    const root = graph.find(wallet);
+    const group = groups.get(root) || [];
+    group.push(wallet);
+    groups.set(root, group);
+  }
+  let entityWallets = [];
+  let entityHoldRate = 0;
+  let bundleHoldRate = 0;
+  for (const group of groups.values()) {
+    const holdRate = graph.holdRate(group, holdRates);
+    if (holdRate > entityHoldRate || (holdRate === entityHoldRate && group.length > entityWallets.length)) {
+      entityWallets = group;
+      entityHoldRate = holdRate;
+    }
+    if (group.length > 1) bundleHoldRate = Math.max(bundleHoldRate, holdRate);
+  }
   return {
     entityHoldRate,
     bundleHoldRate,
-    coBuyCount: graph.coBuyCount(wallets),
-    bundleCount: graph.bundleCount(wallets),
-    launchCohortCount: graph.launchCohortCount(wallets),
+    coBuyCount: graph.coBuyCount(selected),
+    bundleCount: graph.bundleCount(selected),
+    launchCohortCount: graph.launchCohortCount(selected),
     entityDataComplete: dataComplete === true,
     entityWalletCount: entityWallets.length,
     entityEvidence: graph.evidence()

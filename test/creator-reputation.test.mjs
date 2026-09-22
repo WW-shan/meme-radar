@@ -74,3 +74,25 @@ test('confirmed H24 outcomes are written once and replay identically', () => {
   assert.equal(snapshot.priorSuccessfulLaunches, 1);
   assert.equal(snapshot.priorRugRate, 0);
 });
+
+test('creator reputation covers every configured EVM chain used by the scanner', () => {
+  const store = new CreatorReputation();
+  store.record({ chain: 'robinhood', creator, token: 'R', observedAt: 1, outcome: 'rug', timeToRugMs: 50 });
+  const snapshot = store.snapshot('robinhood', creator, 2);
+  assert.equal(snapshot.priorLaunches, 1);
+  assert.equal(snapshot.priorRugRate, 1);
+});
+
+test('outcome ingestion skips malformed creator identities instead of failing the scan cycle', () => {
+  const now = 1_800_000_000_000;
+  const row = createOutcome({
+    chain: 'bsc',
+    address,
+    creatorAddress: 'not-an-address',
+    baselineAt: now - 25 * 60 * 60_000,
+    baselinePrice: 1
+  });
+  row.samples.h24 = { at: now, targetAt: now, collectedAt: now, price: 3, return: 2, failedRead: false };
+  updateOutcomePath(row, [row.samples.h24]);
+  assert.equal(recordConfirmedCreatorOutcomes(new CreatorReputation(), [row]), 0);
+});

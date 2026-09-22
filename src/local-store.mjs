@@ -49,8 +49,15 @@ export class RadarControls {
     this.file = path.join(dir, 'preferences.json');
     this.chains = chains;
     const defaults = { enabledChains: [initialChain], annotations: {} };
-    this.value = { ...defaults, ...readJsonWithBackup(this.file, defaults).value };
-    this.value.enabledChains = [...new Set(this.value.enabledChains)].filter(x => chains.includes(x)).slice(0, 3);
+    const loaded = readJsonWithBackup(this.file, defaults).value;
+    const enabledChains = Array.isArray(loaded.enabledChains) ? loaded.enabledChains : defaults.enabledChains;
+    const annotations = loaded.annotations && typeof loaded.annotations === 'object' && !Array.isArray(loaded.annotations)
+      ? loaded.annotations
+      : {};
+    this.value = {
+      enabledChains: [...new Set(enabledChains)].filter(x => chains.includes(x)).slice(0, 3),
+      annotations
+    };
     if (!this.value.enabledChains.length) this.value.enabledChains = [initialChain];
   }
   setChains(chains) {

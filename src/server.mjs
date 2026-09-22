@@ -121,14 +121,18 @@ function publicSecondary(source = {}) {
 }
 
 export function voiceSnapshot(state, enabledChains) {
-  const scopes = { ...state.chainStates, [state.activeChain]: state };
-  return { chains: Object.fromEntries(enabledChains.filter(chain => CHAIN_IDS.has(chain)).map(chain => [chain,
-    (scopes[chain]?.candidates || []).slice(0, 200).map(row => ({ chain, address: text(row.address, 80),
+  const current = state && typeof state === 'object' ? state : {};
+  const chainStates = current.chainStates && typeof current.chainStates === 'object' && !Array.isArray(current.chainStates)
+    ? current.chainStates : {};
+  const scopes = { ...chainStates, [current.activeChain]: current };
+  const chains = Array.isArray(enabledChains) ? enabledChains : [];
+  return { chains: Object.fromEntries(chains.filter(chain => CHAIN_IDS.has(chain)).map(chain => [chain,
+    (scopes[chain]?.candidates || []).filter(row => row && typeof row === 'object').slice(0, 200).map(row => ({ chain, address: text(row.address, 80),
       status: text(row.status, 32), auditedAt: finite(row.auditedAt), staleAt: finite(row.staleAt),
       qualified: row.status === 'X_REVIEW' && row.deep?.chainPass === true && !row.auditError
         && row.auditHealth?.complete !== false && row.deep?.chartRisk?.pass === true
         && row.deep?.chartRisk?.version === CHART_RISK_VERSION
-        && !state.riskExclusions?.[tokenKey(chain, row.address)]
+        && !current.riskExclusions?.[tokenKey(chain, row.address)]
     }))])) };
 }
 
@@ -156,6 +160,7 @@ function publicCoverage(coverage = {}) {
 }
 
 function publicCoverageRegistry(source = {}) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
   return Object.fromEntries(Object.entries(source).slice(0, 20).map(([chain, row]) => [text(chain, 32), {
     chain: text(row?.chain, 32),
     dexScreener: publicCode(row?.dexScreener),
@@ -615,8 +620,10 @@ export function toPublicStatus(source = {}) {
     supportedChains: Array.isArray(source.supportedChains)
       ? source.supportedChains.slice(0, CHAIN_IDS.size).map(value => text(value, 32)).filter(value => CHAIN_IDS.has(value))
       : [],
-    candidates: Array.isArray(source.candidates) ? source.candidates.slice(0, 100)
-      .map(row => publicCandidate(applyRiskExclusion(row, source.riskExclusions, activeChain))) : [],
+    candidates: (Array.isArray(source.candidates) ? source.candidates : [])
+      .filter(row => row && typeof row === 'object')
+      .slice(0, 100)
+      .map(row => publicCandidate(applyRiskExclusion(row, source.riskExclusions, activeChain))),
     rejected: Array.isArray(source.rejected) ? source.rejected.slice(0, 100).map(publicRejected) : [],
     events: Array.isArray(source.events) ? source.events.slice(0, 100).map(publicEvent) : [],
     xCapability: {

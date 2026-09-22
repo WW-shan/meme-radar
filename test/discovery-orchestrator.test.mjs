@@ -14,6 +14,7 @@ test('orchestrator keeps lifecycle stages separate, deduplicates, and records he
   assert.deepEqual(result.byStage.completed.map(row => row.address), ['A']);
   assert.equal(result.health['gmgn-new-a'].status, 'OK');
   assert.equal(result.health['gmgn-new-a'].count, 1);
+  assert.equal(result.health['gmgn-new-b'].count, 1);
   assert.equal(result.summary.complete, true);
 });
 

@@ -77,3 +77,17 @@ test('entity metrics expose explicit bundle and cohort counts for selected walle
   assert.equal(result.launchCohortCount, 1);
   assert.equal(result.entityWalletCount, 3);
 });
+
+test('entity metrics use the highest-risk cluster instead of only the first wallet', () => {
+  const graph = new EntityGraph();
+  graph.addFunding('wallet-b', 'shared-source');
+  graph.addFunding('wallet-c', 'shared-source');
+  const result = entityMetrics(
+    graph,
+    ['wallet-a', 'wallet-b', 'wallet-c'],
+    { 'wallet-a': .01, 'wallet-b': .2, 'wallet-c': .2 }
+  );
+  assert.equal(result.entityHoldRate, .4);
+  assert.equal(result.bundleHoldRate, .4);
+  assert.equal(result.entityWalletCount, 2);
+});

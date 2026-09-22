@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { createServer, healthSnapshot, isTrustedLocalRequest, toPublicStatus } from '../src/server.mjs';
+import { createServer, healthSnapshot, isTrustedLocalRequest, toPublicStatus, voiceSnapshot } from '../src/server.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const settings = { port: 3791, scanIntervalMs: 120_000, publicDir: path.join(ROOT, 'public') };
@@ -363,4 +363,13 @@ test('connection status exposes only readiness and saving alone cannot be report
     body: JSON.stringify({ apiKey: `gmgn_${'a'.repeat(32)}` })
   });
   assert.equal(unverified.status, 502);
+});
+
+
+test('public status and voice snapshots tolerate malformed legacy collections', () => {
+  const output = toPublicStatus({ activeChain: 'bsc', candidates: [null], coverage: null });
+  assert.deepEqual(output.candidates, []);
+  assert.deepEqual(output.coverage, {});
+  const voice = voiceSnapshot({ activeChain: 'bsc', chainStates: null, riskExclusions: null }, null);
+  assert.deepEqual(voice.chains, {});
 });

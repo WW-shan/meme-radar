@@ -1,4 +1,9 @@
 const OUTCOMES = new Set(['rug', 'success', 'unknown']);
+const SUPPORTED_CHAINS = new Set(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']);
+
+export function creatorIdentityValid(chain, value) {
+  return SUPPORTED_CHAINS.has(String(chain || '').toLowerCase()) && validAddress(String(chain || '').toLowerCase(), value);
+}
 
 function validAddress(chain, value) {
   const address = String(value || '').trim();
@@ -28,7 +33,7 @@ export class CreatorReputation {
     const token = String(row.token || '').trim();
     const observedAt = Number(row.observedAt);
     const outcome = String(row.outcome || 'unknown').toLowerCase();
-    if (!['sol', 'bsc', 'base', 'eth'].includes(chain) || !validAddress(chain, creator)
+    if (!SUPPORTED_CHAINS.has(chain) || !validAddress(chain, creator)
       || !token || !Number.isFinite(observedAt) || observedAt < 0 || !OUTCOMES.has(outcome)) {
       throw Object.assign(new Error('invalid creator history record'), { code: 'INVALID_CREATOR_HISTORY' });
     }
@@ -55,7 +60,7 @@ export class CreatorReputation {
     const normalizedChain = String(chain || '').toLowerCase();
     const normalizedCreator = String(creator || '').trim();
     const cutoff = Number(at);
-    if (!['sol', 'bsc', 'base', 'eth'].includes(normalizedChain) || !validAddress(normalizedChain, normalizedCreator)
+    if (!SUPPORTED_CHAINS.has(normalizedChain) || !validAddress(normalizedChain, normalizedCreator)
       || !Number.isFinite(cutoff) || cutoff < 0) {
       throw Object.assign(new Error('invalid creator snapshot request'), { code: 'INVALID_CREATOR_SNAPSHOT' });
     }
