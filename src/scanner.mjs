@@ -8,6 +8,7 @@ import { collectOutcomeSamples, dueOutcomeJobs, outcomeCoverage, sampleRejected 
 import { tokenKey } from './local-store.mjs';
 import { DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
 import { productCapabilities } from './product/mode.mjs';
+import { LifecycleTracker, LIFECYCLE_ORDER } from './discovery/lifecycle.mjs';
 
 const numberOrNull = value => {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
@@ -29,7 +30,7 @@ const OUTCOME_SAMPLE_GRACE_MS = 5 * 60_000;
 const REQUIRED_CALIBRATION_WINDOWS = Object.freeze(['m30', 'h2', 'h24']);
 const CHAIN_SCOPE_KEYS = Object.freeze([
   'scanCount', 'discoveredCount', 'prequalifiedCount', 'candidates', 'rejected',
-  'auditQueue', 'auditQueueStats', 'outcomes', 'outcomeSummary', 'sourceHealth',
+  'auditQueue', 'auditQueueStats', 'outcomes', 'outcomeSummary', 'sourceHealth', 'lifecycle',
   'lastAttemptAt', 'lastSuccessAt', 'lastCompleteSuccessAt', 'lastCycleMs', 'retryAt', 'status', 'generatedAt', 'nextCycleAt'
 ]);
 const RESERVED_X_PATHS = new Set([
@@ -334,7 +335,7 @@ function emptyScope() {
       tracked: 0, completed5m: 0, completed15m: 0, completed30m: 0,
       completed1h: 0, completed2h: 0, completed6h: 0, completed24h: 0
     },
-    sourceHealth: {}, lastAttemptAt: 0, lastSuccessAt: 0, lastCompleteSuccessAt: 0,
+    sourceHealth: {}, lifecycle: [], lastAttemptAt: 0, lastSuccessAt: 0, lastCompleteSuccessAt: 0,
     lastCycleMs: 0, retryAt: 0
   };
 }
@@ -492,6 +493,19 @@ export class Scanner {
       const discoveryResult = await new DiscoveryOrchestrator(this.discoverySources()).run(chain);
       if (this.gmgn.keyEpoch !== keyEpoch) return;
       this.lastDiscoveryStages = discoveryResult.byStage;
+      const lifecycle = new LifecycleTracker(prior.lifecycle || []);
+      for (const [stage, rows] of Object.entries(discoveryResult.byStage)) {
+        if (!Object.hasOwn(LIFECYCLE_ORDER, stage)) continue;
+        for (const row of rows) {
+          const observedAt = Number(row.observedAt || row.updated_at || row.open_timestamp * 1000 || row.creation_timestamp * 1000 || startedAt);
+          lifecycle.observe({ chain, address: row.address, stage, observedAt });
+          row._lifecycleStage = lifecycle.stageFor(chain, row.address) || stage;
+        }
+      }
+      for (const row of discoveryResult.byStage.signal || []) {
+        row._lifecycleStage = lifecycle.stageFor(chain, row.address) || 'signal';
+      }
+      this.lastLifecycle = lifecycle;
       let discovered = Object.values(discoveryResult.byStage).flat();
       const reviewRequests = [...this.requestedReviews.values()].filter(item => item.chain === chain
         && item.epoch === keyEpoch && Date.now() - item.at <= 10 * 60000);
@@ -499,10 +513,13 @@ export class Scanner {
       discovered = [...new Map([...reviewRequests.map(item => item.row), ...discovered].map(row => [addressKey(row.address), row])).values()];
       const discoveredByAddress = new Map(discovered.filter(row => row?.address).map(row => [addressKey(row.address), row]));
       const screened = discovered.map(row => {
-        const screen = discoveryScreen(row, settings);
+        const lifecycleStage = row._lifecycleStage || 'completed';
+        const screen = discoveryScreen(row, settings, Date.now() / 1000, {
+          skipAge: ['new_creation', 'near_completion', 'signal'].includes(lifecycleStage)
+        });
         const held = riskExclusions[tokenKey(chain, row.address)];
         if (held) { screen.pass = false; screen.reasons.push(...held.reasons); }
-        return { row, screen };
+        return { row, screen, lifecycleStage };
       });
       const prequalified = screened.filter(item => item.screen.pass).sort((a, b) =>
         Number(b.screen.priorityBand) - Number(a.screen.priorityBand) || b.screen.score - a.screen.score
@@ -561,9 +578,13 @@ export class Scanner {
         const token = publicToken(item.row, item.screen, chain);
         const visibleToken = cleanCandidate(token);
         try {
-          const audit = await this.gmgn.audit(token.address, Math.floor(Date.now() / 1000), chain, {
+          const lifecycleStage = item.lifecycleStage === 'signal' ? 'new_creation' : item.lifecycleStage || 'completed';
+          const auditOptions = {
             shouldStopEarly: partial => classifyDeepResult(deepScreen({ discovery: item.row, audit: partial }, settings), partial._meta).status === 'HARD_REJECT'
-          });
+          };
+          const audit = typeof this.gmgn.auditStage === 'function'
+            ? await this.gmgn.auditStage(token.address, lifecycleStage, Math.floor(Date.now() / 1000), chain, auditOptions)
+            : await this.gmgn.audit(token.address, Math.floor(Date.now() / 1000), chain, auditOptions);
           if (this.gmgn.keyEpoch !== keyEpoch) return;
           const freshPrice = tokenInfoPrice(audit.info);
           if (freshPrice) { token.price = freshPrice; visibleToken.price = freshPrice; }
@@ -582,9 +603,13 @@ export class Scanner {
             this.state.save();
           }
           const baseClassification = classifyDeepResult(deep, audit._meta || {});
+          if (!['completed', 'migrated'].includes(lifecycleStage) && baseClassification.status !== 'HARD_REJECT') {
+            baseClassification.status = 'WAIT_RECHECK';
+            baseClassification.secondaryReason = '生命周期尚未完成，等待后续阶段复核';
+          }
           const primaryWebsite = String(first(audit.info?.link?.website, item.row.website, item.row.link?.website) || '');
           let secondary = null;
-          if (this.secondary && baseClassification.status !== 'HARD_REJECT') {
+          if (this.secondary && ['completed', 'migrated'].includes(lifecycleStage) && baseClassification.status !== 'HARD_REJECT') {
             try {
               secondary = await this.secondary.validate({
                 chain,
@@ -632,6 +657,7 @@ export class Scanner {
             secondary,
             decisionReason: [...deep.chartRisk.reasons, classification.secondaryReason, marketBehaviorReason].filter(Boolean).join('；'),
             auditHealth: audit._meta || { complete: true, endpoints: {} },
+            lifecycleStage,
             info: {
               twitter: social.twitter,
               website: String(first(primaryWebsite, secondaryWebsite) || '')
@@ -754,6 +780,7 @@ export class Scanner {
         auditQueueStats: queueStats(auditQueue, availableAddresses, now, settings),
         outcomes,
         outcomeSummary: summarizeOutcomes(outcomes),
+        lifecycle: lifecycle.snapshot(),
         sourceHealth: { discovery: discoveryHealth, lastAudit: lastAuditHealth, lastSecondary: lastSecondaryHealth },
         xCapability: { available: false, mode: 'manual', reason: 'X由用户点击链接人工复核' },
         policy: {

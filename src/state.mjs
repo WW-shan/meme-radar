@@ -37,6 +37,7 @@ function defaultState() {
       completed1h: 0, completed2h: 0, completed6h: 0, completed24h: 0
     },
     sourceHealth: {},
+    lifecycle: [],
     events: []
   };
 }

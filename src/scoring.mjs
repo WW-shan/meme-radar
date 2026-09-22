@@ -147,7 +147,7 @@ export function knownRiskReasons(row, config) {
   return reasons;
 }
 
-export function discoveryScreen(row, config, nowSec = Date.now() / 1000) {
+export function discoveryScreen(row, config, nowSec = Date.now() / 1000, { skipAge = false } = {}) {
   const mcValue = optionalNumber(first(row.market_cap, row.usd_market_cap, row.mcp));
   const createdValue = optionalNumber(first(row.creation_timestamp, row.created_timestamp, row.open_timestamp));
   const liquidityValue = optionalNumber(row.liquidity);
@@ -163,7 +163,7 @@ export function discoveryScreen(row, config, nowSec = Date.now() / 1000) {
   const reasons = knownRiskReasons(row, config);
   if (!validAddressForChain(row.address, config.chain)) reasons.push('地址格式异常');
   if (createdValue === null || created <= 0) reasons.push('创建时间未知');
-  else if (!(ageSec >= config.minAgeSec)) reasons.push('创建不足5分钟');
+  else if (!skipAge && !(ageSec >= config.minAgeSec)) reasons.push('创建不足5分钟');
   else if (ageSec > config.maxAgeSec) reasons.push('超过观察年龄上限');
   if (mcValue === null) reasons.push('市值数据未知');
   else if (!(mc >= config.discoveryMinMarketCap && mc <= config.discoveryMaxMarketCap)) reasons.push('市值不在发现范围');

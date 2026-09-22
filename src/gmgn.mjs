@@ -320,10 +320,10 @@ export class GmgnClient {
     return [...merged.values()];
   }
 
-  async audit(address, nowSec = Math.floor(Date.now() / 1000), chain = 'robinhood', { shouldStopEarly } = {}) {
+  async audit(address, nowSec = Math.floor(Date.now() / 1000), chain = 'robinhood', { shouldStopEarly, endpointNames = null, stage = 'completed' } = {}) {
     const base = ['--chain', chain, '--address', address, '--raw'];
     const from = String(nowSec - 20 * 60), to = String(nowSec);
-    const specs = [
+    const allSpecs = [
       ['info', ['token', 'info', ...base]],
       ['security', ['token', 'security', ...base]],
       ['pool', ['token', 'pool', ...base]],
@@ -331,38 +331,46 @@ export class GmgnClient {
       ['traders', ['token', 'traders', '--chain', chain, '--address', address, '--limit', '50', '--raw']],
       ['candles', ['market', 'kline', '--chain', chain, '--address', address, '--resolution', '1m', '--from', from, '--to', to, '--raw']]
     ];
-    // Static contract evidence is fetched first. Dynamic endpoints follow only after
-    // the first stage has had a chance to surface provider-level failures.
-    const staticCalls = await Promise.allSettled(specs.slice(0, 3).map(([name, args]) => this.cachedRead(args, name === 'security' ? 60_000 : 15_000)));
-    const partial = {
-      info: staticCalls[0].status === 'fulfilled' ? unwrap(staticCalls[0].value) : {},
-      security: staticCalls[1].status === 'fulfilled' ? unwrap(staticCalls[1].value) : {},
-      pool: staticCalls[2].status === 'fulfilled' ? unwrap(staticCalls[2].value) : {},
-      holders: [], traders: [], candles: [], _meta: { complete: false, earlyExit: true }
+    const allowed = new Set(endpointNames || allSpecs.map(([name]) => name));
+    const specs = allSpecs.filter(([name]) => allowed.has(name));
+    const staticNames = new Set(['info', 'security', 'pool']);
+    const staticSpecs = specs.filter(([name]) => staticNames.has(name));
+    const dynamicSpecs = specs.filter(([name]) => !staticNames.has(name));
+    const result = {
+      info: {}, security: {}, pool: {}, holders: [], traders: [], candles: [],
+      _meta: { complete: false, earlyExit: true, stage, endpoints: {}, auditedAt: Date.now() }
     };
-    if (staticCalls.every(x => x.status === 'fulfilled') && shouldStopEarly?.(partial)) return partial;
-    const dynamicCalls = await Promise.allSettled(specs.slice(3).map(([, args]) => this.cachedRead(args, 15_000)));
+    const assign = (name, call) => {
+      if (call.status === 'fulfilled') {
+        result[name] = ['holders', 'traders', 'candles'].includes(name) ? normalizeList(call.value) : unwrap(call.value) || {};
+        result._meta.endpoints[name] = { ok: true };
+      } else {
+        result._meta.endpoints[name] = errorSummary(call.reason);
+      }
+    };
+    const staticCalls = await Promise.allSettled(staticSpecs.map(([name, args]) => this.cachedRead(args, name === 'security' ? 60_000 : 15_000)));
+    staticSpecs.forEach(([name], index) => assign(name, staticCalls[index]));
+    if (staticCalls.every(call => call.status === 'fulfilled') && shouldStopEarly?.(result)) return result;
+
+    const dynamicCalls = await Promise.allSettled(dynamicSpecs.map(([, args]) => this.cachedRead(args, 15_000)));
+    dynamicSpecs.forEach(([name], index) => assign(name, dynamicCalls[index]));
     const calls = [...staticCalls, ...dynamicCalls];
-    const endpoints = Object.fromEntries(specs.map(([name], index) => [name,
-      calls[index].status === 'fulfilled' ? { ok: true } : errorSummary(calls[index].reason)
-    ]));
-    if (calls.every(call => call.status === 'rejected')) {
+    result._meta.complete = calls.length > 0 && calls.every(call => call.status === 'fulfilled');
+    result._meta.earlyExit = stage !== 'completed' || specs.length < allSpecs.length;
+    if (calls.length && calls.every(call => call.status === 'rejected')) {
       const limited = calls.find(call => call.reason?.code === 'GMGN_RATE_LIMITED');
       throw limited?.reason || calls[0].reason;
     }
-    const value = index => calls[index].status === 'fulfilled' ? calls[index].value : null;
-    return {
-      info: unwrap(value(0)) || {},
-      security: unwrap(value(1)) || {},
-      pool: unwrap(value(2)) || {},
-      holders: normalizeList(value(3)),
-      traders: normalizeList(value(4)),
-      candles: normalizeList(value(5)),
-      _meta: {
-        complete: calls.every(call => call.status === 'fulfilled'),
-        endpoints,
-        auditedAt: Date.now()
-      }
-    };
+    return result;
+  }
+
+  async auditStage(address, stage, nowSec = Math.floor(Date.now() / 1000), chain = 'robinhood', options = {}) {
+    const endpointNames = stage === 'new_creation'
+      ? ['info', 'security', 'pool']
+      : stage === 'near_completion'
+        ? ['info', 'security', 'pool', 'holders', 'traders']
+        : null;
+    if (endpointNames === null && !['completed', 'migrated'].includes(stage)) throw new Error('Invalid audit stage');
+    return this.audit(address, nowSec, chain, { ...options, endpointNames, stage });
   }
 }
