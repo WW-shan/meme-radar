@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveProductMode } from './product/mode.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..');
@@ -10,6 +11,7 @@ function boundedInteger(value, fallback, minimum, maximum) {
 }
 
 export const config = Object.freeze({
+  productMode: resolveProductMode(process.env.RADAR_PRODUCT_MODE || 'risk-radar'),
   chain: 'robinhood',
   supportedChains: Object.freeze(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']),
   port: boundedInteger(process.env.RADAR_PORT, 3791, 1024, 65_535),
