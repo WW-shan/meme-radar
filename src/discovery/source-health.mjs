@@ -6,6 +6,7 @@ export function summarizeSourceHealth(health = {}) {
   const rows = Object.values(health);
   return {
     complete: rows.length > 0 && rows.every(row => row.status === 'OK'),
+    unconfigured: rows.some(row => row.status === 'UNCONFIGURED'),
     checkedAt: Math.max(0, ...rows.map(row => Number(row.checkedAt) || 0)),
     sources: health
   };

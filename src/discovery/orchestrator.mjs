@@ -37,7 +37,8 @@ export class DiscoveryOrchestrator {
         });
       } catch (error) {
         health[source.name] = sourceHealthRecord({
-          status: 'ERROR', count: 0, latencyMs: Date.now() - startedAt,
+          status: error.code === 'CHAIN_SOURCE_UNCONFIGURED' ? 'UNCONFIGURED' : 'ERROR',
+          count: 0, latencyMs: Date.now() - startedAt,
           code: error.code || 'SOURCE_ERROR', checkedAt: Date.now()
         });
       }

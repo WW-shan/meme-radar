@@ -12,6 +12,16 @@ function boundedInteger(value, fallback, minimum, maximum) {
 
 export const config = Object.freeze({
   productMode: resolveProductMode(process.env.RADAR_PRODUCT_MODE || 'risk-radar'),
+  chainEventsEnabled: process.env.RADAR_CHAIN_EVENTS === '1',
+  solanaRpcUrl: String(process.env.SOLANA_RPC_URL || ''),
+  solanaMigrationAuthority: String(process.env.SOLANA_MIGRATION_AUTHORITY || ''),
+  solanaMigrationProgram: String(process.env.SOLANA_MIGRATION_PROGRAM || ''),
+  evmRpcUrls: Object.freeze({
+    bsc: String(process.env.BSC_RPC_URL || ''),
+    base: String(process.env.BASE_RPC_URL || ''),
+    eth: String(process.env.ETH_RPC_URL || '')
+  }),
+  evmFactories: Object.freeze({ bsc: Object.freeze([]), base: Object.freeze([]), eth: Object.freeze([]) }),
   chain: 'robinhood',
   supportedChains: Object.freeze(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']),
   port: boundedInteger(process.env.RADAR_PORT, 3791, 1024, 65_535),

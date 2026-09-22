@@ -346,9 +346,10 @@ function addEvent(events, type, message, chain, data = {}) {
 }
 
 export class Scanner {
-  constructor({ gmgn, secondary = null, state, controls = null, settings = config }) {
+  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [] }) {
     this.gmgn = gmgn;
     this.secondary = secondary;
+    this.chainSources = chainSources;
     this.state = state;
     this.controls = controls;
     this.config = settings;
@@ -374,7 +375,8 @@ export class Scanner {
     sources.push(
       { name: 'gmgn-new', read: async chain => ({ stage: 'new_creation', rows: await this.gmgn.discoverStage(chain, 'new_creation', 80) }) },
       { name: 'gmgn-near', read: async chain => ({ stage: 'near_completion', rows: await this.gmgn.discoverStage(chain, 'near_completion', 80) }) },
-      { name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) }
+      { name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) },
+      ...(this.chainSources || [])
     );
     return sources;
   }
