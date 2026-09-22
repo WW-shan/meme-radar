@@ -40,19 +40,28 @@ export class EvmEventSource {
       for (const log of logs) {
         if (!sameHex(log?.address, factory.address) || !sameHex(log?.topics?.[0], factory.topic)) continue;
         const decoded = typeof factory.decode === 'function' ? factory.decode(log) : null;
-        const topicIndex = Number.isInteger(factory.tokenTopicIndex) ? factory.tokenTopicIndex : 1;
-        const topicValue = String(log?.topics?.[topicIndex] || '');
-        const inferred = /^0x[0-9a-f]{64}$/i.test(topicValue) ? `0x${topicValue.slice(-40)}` : '';
-        const tokenAddress = String(decoded?.tokenAddress || inferred);
-        if (!/^0x[0-9a-f]{40}$/i.test(tokenAddress)) continue;
-        const key = `${String(log.transactionHash).toLowerCase()}:${String(log.logIndex).toLowerCase()}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        events.push({
-          type: 'pool_created', chain, transactionHash: log.transactionHash,
-          blockNumber: log.blockNumber, logIndex: log.logIndex,
-          token: { address: tokenAddress }, factory: factory.address, readOnly: true
-        });
+        const topicIndexes = Array.isArray(factory.tokenTopicIndexes)
+          ? factory.tokenTopicIndexes
+          : [Number.isInteger(factory.tokenTopicIndex) ? factory.tokenTopicIndex : 1];
+        const excluded = new Set((Array.isArray(factory.excludeTokens) ? factory.excludeTokens : [])
+          .map(value => String(value).toLowerCase()));
+        const candidates = decoded?.tokenAddress
+          ? [String(decoded.tokenAddress)]
+          : topicIndexes.map(index => {
+            const topicValue = String(log?.topics?.[index] || '');
+            return /^0x[0-9a-f]{64}$/i.test(topicValue) ? `0x${topicValue.slice(-40)}` : '';
+          });
+        for (const tokenAddress of candidates) {
+          if (!/^0x[0-9a-f]{40}$/i.test(tokenAddress) || excluded.has(tokenAddress.toLowerCase())) continue;
+          const key = `${String(log.transactionHash).toLowerCase()}:${String(log.logIndex).toLowerCase()}:${tokenAddress.toLowerCase()}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          events.push({
+            type: 'pool_created', chain, transactionHash: log.transactionHash,
+            blockNumber: log.blockNumber, logIndex: log.logIndex,
+            token: { address: tokenAddress }, factory: factory.address, readOnly: true
+          });
+        }
       }
     }
     return { events, cursor: Number(BigInt(to)), hasMore: false };

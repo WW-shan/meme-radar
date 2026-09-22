@@ -1,6 +1,7 @@
 import { JsonRpcClient } from './rpc.mjs';
 import { SolanaEventSource } from './solana-source.mjs';
 import { EvmEventSource } from './evm-source.mjs';
+import { ChainCursorStore } from './cursor-store.mjs';
 
 function unconfigured(message) {
   return Object.assign(new Error(message), { code: 'CHAIN_SOURCE_UNCONFIGURED' });
@@ -14,8 +15,9 @@ function discoveryRows(events) {
   })).filter(event => event.address);
 }
 
-export function createChainEventSources(config = {}, { fetchImpl = globalThis.fetch } = {}) {
+export function createChainEventSources(config = {}, { fetchImpl = globalThis.fetch, cursorStore = null } = {}) {
   if (config.chainEventsEnabled !== true) return [];
+  const cursors = cursorStore || (config.stateDir ? new ChainCursorStore(config.stateDir) : null);
   const sources = [];
   const solanaRpc = new JsonRpcClient(config.solanaRpcUrl, { fetchImpl });
   const solana = new SolanaEventSource({
@@ -23,13 +25,16 @@ export function createChainEventSources(config = {}, { fetchImpl = globalThis.fe
     migrationAuthority: config.solanaMigrationAuthority || '',
     programId: config.solanaMigrationProgram || ''
   });
-  let solanaCursor = '';
+  let solanaCursor = String(cursors?.get('solana-migration') || '');
   sources.push({
     name: 'solana-migration',
     read: async chain => {
       if (chain !== 'sol') throw unconfigured('Solana source only supports sol');
       const result = await solana.poll({ until: solanaCursor });
-      if (result.cursor) solanaCursor = result.cursor;
+      if (result.cursor) {
+        cursors?.set('solana-migration', result.cursor);
+        solanaCursor = result.cursor;
+      }
       return { stage: 'migrated', rows: discoveryRows(result.events) };
     }
   });
@@ -39,7 +44,11 @@ export function createChainEventSources(config = {}, { fetchImpl = globalThis.fe
       rpc,
       factories: { [chain]: config.evmFactories?.[chain] || [] }
     });
-    let nextBlock = Number(config.evmStartBlocks?.[chain] || 0);
+    const cursorName = `evm-${chain}-pool`;
+    const savedBlock = cursors?.get(cursorName) ?? null;
+    let nextBlock = savedBlock === null
+      ? Number(config.evmStartBlocks?.[chain] || 0)
+      : Number(savedBlock) + 1;
     sources.push({
       name: `evm-${chain}-pool`,
       read: async requestedChain => {
@@ -48,6 +57,7 @@ export function createChainEventSources(config = {}, { fetchImpl = globalThis.fe
         if (!Number.isInteger(latestBlock) || latestBlock < 0) throw new Error('invalid latest block');
         if (latestBlock < nextBlock) return { stage: 'new_creation', rows: [] };
         const result = await evm.poll({ chain, fromBlock: nextBlock, toBlock: latestBlock });
+        cursors?.set(cursorName, result.cursor);
         nextBlock = result.cursor + 1;
         return { stage: 'new_creation', rows: discoveryRows(result.events) };
       }

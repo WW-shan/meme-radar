@@ -88,6 +88,24 @@ test('EVM source reports UNCONFIGURED for an unconfigured chain', async () => {
   await assert.rejects(source.poll({ chain: 'bsc', fromBlock: 1, toBlock: 2 }), error => error.code === 'CHAIN_SOURCE_UNCONFIGURED');
 });
 
+test('EVM source can inspect both V2 token topics while excluding quote tokens', async () => {
+  const factory = {
+    address: '0x1111111111111111111111111111111111111111',
+    topic: `0x${'aa'.repeat(32)}`,
+    tokenTopicIndexes: [1, 2],
+    excludeTokens: ['0x' + 'bb'.repeat(20)]
+  };
+  const log = {
+    address: factory.address,
+    topics: [factory.topic, `0x${'0'.repeat(24)}${'bb'.repeat(20)}`, `0x${'0'.repeat(24)}${'cc'.repeat(20)}`],
+    transactionHash: '0xtx', blockNumber: '0x10', logIndex: '0x0'
+  };
+  const source = new EvmEventSource({ rpc: { call: async () => ({ result: [log] }) }, factories: { bsc: [factory] } });
+  const result = await source.poll({ chain: 'bsc', fromBlock: 1, toBlock: 2 });
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].token.address.toLowerCase(), `0x${'cc'.repeat(20)}`);
+});
+
 test('chain source factory stays disabled by default and reports UNCONFIGURED when enabled without RPC', async () => {
   assert.deepEqual(createChainEventSources({ chainEventsEnabled: false }), []);
   const sources = createChainEventSources({ chainEventsEnabled: true });

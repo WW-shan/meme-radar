@@ -4,10 +4,78 @@ import { resolveProductMode } from './product/mode.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..');
+const EVM_CHAINS = Object.freeze(['bsc', 'base', 'eth']);
 
 function boundedInteger(value, fallback, minimum, maximum) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+}
+
+function configObject(value, code, label) {
+  if (value === undefined || value === null || value === '') return {};
+  let parsed = value;
+  if (typeof value === 'string') {
+    try { parsed = JSON.parse(value); }
+    catch { throw Object.assign(new Error(`${label} must be valid JSON`), { code }); }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw Object.assign(new Error(`${label} must be a JSON object`), { code });
+  }
+  return parsed;
+}
+
+export function parseEvmFactories(value = process.env.RADAR_EVM_FACTORIES) {
+  const input = configObject(value, 'INVALID_EVM_FACTORY_CONFIG', 'RADAR_EVM_FACTORIES');
+  const unknown = Object.keys(input).filter(chain => !EVM_CHAINS.includes(chain));
+  if (unknown.length) throw Object.assign(new Error(`unsupported EVM factory chain: ${unknown.join(',')}`), { code: 'INVALID_EVM_FACTORY_CONFIG' });
+  const result = {};
+  for (const chain of EVM_CHAINS) {
+    const rows = input[chain] ?? [];
+    if (!Array.isArray(rows)) throw Object.assign(new Error(`RADAR_EVM_FACTORIES.${chain} must be an array`), { code: 'INVALID_EVM_FACTORY_CONFIG' });
+    result[chain] = Object.freeze(rows.map(row => {
+      const address = String(row?.address || '');
+      const topic = String(row?.topic || '');
+      const tokenTopicIndex = row?.tokenTopicIndex === undefined ? 1 : Number(row.tokenTopicIndex);
+      if (!/^0x[0-9a-f]{40}$/i.test(address)
+        || !/^0x[0-9a-f]{64}$/i.test(topic)
+        || !Number.isInteger(tokenTopicIndex) || tokenTopicIndex < 0 || tokenTopicIndex > 3) {
+        throw Object.assign(new Error(`invalid EVM factory configuration for ${chain}`), { code: 'INVALID_EVM_FACTORY_CONFIG' });
+      }
+      const normalized = { address, topic, tokenTopicIndex };
+      if (row?.tokenTopicIndexes !== undefined) {
+        const indexes = row.tokenTopicIndexes;
+        if (!Array.isArray(indexes) || indexes.length === 0 || new Set(indexes).size !== indexes.length
+          || indexes.some(index => !Number.isInteger(index) || index < 0 || index > 3)) {
+          throw Object.assign(new Error(`invalid EVM token topic indexes for ${chain}`), { code: 'INVALID_EVM_FACTORY_CONFIG' });
+        }
+        normalized.tokenTopicIndexes = Object.freeze([...indexes]);
+      }
+      if (row?.excludeTokens !== undefined) {
+        if (!Array.isArray(row.excludeTokens)
+          || row.excludeTokens.some(value => !/^0x[0-9a-f]{40}$/i.test(String(value)))) {
+          throw Object.assign(new Error(`invalid EVM excluded tokens for ${chain}`), { code: 'INVALID_EVM_FACTORY_CONFIG' });
+        }
+        normalized.excludeTokens = Object.freeze(row.excludeTokens.map(String));
+      }
+      return Object.freeze(normalized);
+    }));
+  }
+  return Object.freeze(result);
+}
+
+export function parseEvmStartBlocks(value = process.env.RADAR_EVM_START_BLOCKS) {
+  const input = configObject(value, 'INVALID_EVM_START_BLOCKS', 'RADAR_EVM_START_BLOCKS');
+  const unknown = Object.keys(input).filter(chain => !EVM_CHAINS.includes(chain));
+  if (unknown.length) throw Object.assign(new Error(`unsupported EVM start block chain: ${unknown.join(',')}`), { code: 'INVALID_EVM_START_BLOCKS' });
+  const result = {};
+  for (const chain of EVM_CHAINS) {
+    const block = input[chain] ?? 0;
+    if (!Number.isSafeInteger(block) || block < 0) {
+      throw Object.assign(new Error(`invalid EVM start block for ${chain}`), { code: 'INVALID_EVM_START_BLOCKS' });
+    }
+    result[chain] = block;
+  }
+  return Object.freeze(result);
 }
 
 export const config = Object.freeze({
@@ -21,7 +89,8 @@ export const config = Object.freeze({
     base: String(process.env.BASE_RPC_URL || ''),
     eth: String(process.env.ETH_RPC_URL || '')
   }),
-  evmFactories: Object.freeze({ bsc: Object.freeze([]), base: Object.freeze([]), eth: Object.freeze([]) }),
+  evmFactories: parseEvmFactories(),
+  evmStartBlocks: parseEvmStartBlocks(),
   chain: 'robinhood',
   supportedChains: Object.freeze(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']),
   port: boundedInteger(process.env.RADAR_PORT, 3791, 1024, 65_535),
