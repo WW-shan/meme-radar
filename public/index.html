@@ -108,6 +108,7 @@
       box-shadow: 0 0 25px #36e79b33;
     }
     .brand h1 { margin: 0; font-size: 26px; letter-spacing: .035em; }
+    .product-mode-note { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
     .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
     .language-control {
       min-height: 42px;
@@ -658,7 +659,7 @@
     <header>
       <div class="brand">
         <div class="mark">雷达</div>
-        <h1 data-i18n="appTitle">Meme雷达开源版</h1>
+        <div><h1 data-i18n="appTitle">Meme雷达开源版</h1><p class="product-mode-note" data-i18n="productModeNotice">默认模式：风险雷达 · 只读、不签名、不下单</p></div>
       </div>
       <div class="header-actions">
         <label class="language-control" for="languageSelect">
@@ -934,6 +935,7 @@
       failureAlert: ['扫描长时间未成功，请检查连接','掃描長時間未成功，請檢查連線','No successful scan for an extended period; check connectivity','スキャン成功が長時間ありません。接続を確認してください','장시간 스캔 성공 없음; 연결 확인 필요','لم ينجح المسح منذ فترة؛ تحقق من الاتصال'],
       notificationUnavailable: ['浏览器未允许通知，页面事件仍可查看','瀏覽器未允許通知，仍可查看頁面事件','Notifications unavailable; in-page events remain available','通知を利用できません。ページ内履歴は表示されます','알림을 사용할 수 없습니다. 페이지 기록은 유지됩니다','الإشعارات غير متاحة؛ تبقى أحداث الصفحة'],
       appTitle: ['Meme雷达开源版', 'Meme雷達開源版', 'Meme Radar Open Source', 'Memeレーダー オープンソース版', 'Meme 레이더 오픈 소스판', 'رادار Meme مفتوح المصدر'],
+      productModeNotice: ['默认模式：风险雷达 · 只读、不签名、不下单', '預設模式：風險雷達 · 唯讀、不簽名、不下單', 'Default mode: Risk Radar · read-only, no signing, no orders', '既定モード：リスクレーダー · 読み取り専用、署名・注文なし', '기본 모드: 리스크 레이더 · 읽기 전용, 서명·주문 없음', 'الوضع الافتراضي: رادار المخاطر · للقراءة فقط، دون توقيع أو أوامر'],
       languageLabel: ['语言', '語言', 'Language', '言語', '언어', 'اللغة'],
       languageAria: ['选择语言', '選擇語言', 'Select language', '言語を選択', '언어 선택', 'اختيار اللغة'],
       waitingState: ['等待状态', '等待狀態', 'Waiting', '待機中', '대기 중', 'في الانتظار'],

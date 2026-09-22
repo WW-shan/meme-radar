@@ -53,3 +53,19 @@ test('community entry point never inherits a global GMGN key', () => {
   const main = fs.readFileSync(path.join(root, 'src/main.mjs'), 'utf8');
   assert.match(main, /legacyKeyProvider:\s*\(\)\s*=>\s*''/);
 });
+
+test('public copy matches the risk-radar default mode', () => {
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  const boundary = fs.readFileSync(path.join(root, 'docs/EDITION-BOUNDARY.md'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+
+  for (const copy of [readme, boundary, html]) {
+    assert.match(copy, /默认模式：风险雷达/);
+  }
+  assert.match(readme, /不会抢跑、签名或下单/);
+  assert.match(boundary, /early-discovery/);
+  assert.match(boundary, /实验性只读能力/);
+  for (const copy of [readme, boundary, html]) {
+    assert.doesNotMatch(copy, /保证(?:发现|命中|盈利)|亚秒级狙击|稳赚/);
+  }
+});
