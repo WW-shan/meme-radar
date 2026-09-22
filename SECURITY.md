@@ -8,6 +8,43 @@ Meme雷达开源版是只读研究工具，不包含钱包私钥、链上交易�
 - Key 仅保存在运行本工具的电脑上，不应提交到 Git、截图或问题报告。
 - 发布问题报告前，请删除日志、合约备注和任何可能识别个人的信息。
 
+## 上游数据用途与保留
+
+数据只在本机用于候选发现、风险审计、交叉验证和结果跟踪，不上传到本项目自己的服务。实际调用仍会直接访问各上游，因此对方可看到请求地址、IP、链和代币地址。
+
+| 来源 | 数据用途 | 发送字段 | 缓存与保留 | 再分发限制 | 官方记录 |
+| --- | --- | --- | --- | --- | --- |
+| GMGN | Trenches、trending、signal、代币信息、安全、池、持有人、交易者及 K 线 | 链、地址、查询参数；API Key 仅经受限子进程环境 | 仅进程内存缓存 15–60秒；派生的候选和结果可写入本机 `state/` | 只做用户主动、逐代币查询；不得批量导出、公开再分发原始或近似可重建的 GMGN 数据，不启用交易权限 | [GMGN Agent API](https://docs.gmgn.ai/index/gmgn-agent-api) |
+| DexScreener | 市值、流动性、交易对和官网交叉校验 | 链标识、公开代币地址；无 API Key | 本项目不缓存；派生的核验结论可随候选留在本机 | 不得批量导出、公开再分发；遵守官方 API 条款和 300 次/分钟以内的限流 | [DexScreener API](https://docs.dexscreener.com/api/reference) |
+| GoPlus | 已支持链的合约安全字段交叉校验 | 链标识、公开代币地址；无 API Key | 本项目不缓存；派生的风险结论可随候选留在本机 | 只用于本机风险核验；不得批量导出、公开再分发或把免费接口包装成商业数据服务 | [GoPlus API](https://docs.gopluslabs.io/reference/api-overview) |
+| 直接链上 RPC | Solana migration 和 EVM pool-created 只读事件 | 用户配置的 RPC URL、区块范围、交易签名或日志查询 | 事件可写入本机 `state/events/*.ndjson`；不发送给本项目服务器 | 链上原始数据按节点和链的规则使用；不得把第三方 RPC 凭据打入发布包 | [Solana JSON-RPC](https://solana.com/docs/rpc) |
+
+## 数据保留与删除
+
+- API Key 和 Ed25519 认证私钥保留到用户在页面断开或手动删除本机 `state/`。
+- `state/radar.json` 保存候选、审计队列和结果；候选项默认保留 2 小时、队列 24 小时、结果窗口 7 天，其他状态保留到用户删除。
+- `state/events/*.ndjson` 为可选 append-only 事件库，当前不会自动删除；关闭直接链上来源或删除 `state/events` 可停止并清除。
+- 运行日志、`state/`、`.runtime/`、API Key、私钥和本机绝对路径不得进入源码仓库或发布包。
+
+## 授权复核记录
+
+- 2026-09-23：项目所有者授权 Codex 代核（项目所有者授权（Codex 代核））。
+- 上游条款结论：仅使用各官方公开只读接口和用户自有凭据；不做交易、批量抓取、原始数据镜像、转售或商业再分发；保留官方标注、限流和停止使用义务。
+- 数据保留结论：运行态仅保存在本机；候选 2 小时、队列 24 小时、结果窗口 7 天；事件库默认关闭且不自动删除；用户可删除 `state/` 终止留存。
+- RPC 隐私结论：直接链上来源默认关闭；应用不记录 RPC URL、凭据或原始响应。用户选择的 RPC 运营方可能记录 IP、方法和链上对象，使用前应按其隐私/日志政策自行复核；本项目不承诺第三方节点零日志。
+- 复核证据：[GMGN Agent API](https://docs.gmgn.ai/index/gmgn-agent-api)、[DexScreener API](https://docs.dexscreener.com/api/reference)、[GoPlus API](https://docs.gopluslabs.io/reference/api-overview)、[Solana JSON-RPC](https://solana.com/docs/rpc)。
+- 边界：这是发布工程的合规门禁记录，不构成法律意见；上游政策变更后必须重新复核。
+
+## 再分发边界
+
+本项目只提供本机 `127.0.0.1` 展示和人工研究，不提供上游数据下载、批量镜像或公共 API。不得批量导出、公开再分发上游数据；如需共享研究结论，只应提供自行生成的有限统计和必要摘录，并继续遵守各上游条款。
+
+## 直接链上 RPC 隐私
+
+- 直接链上来源默认关闭；只有设置 `RADAR_CHAIN_EVENTS=1` 并配置对应 RPC 后才启用。
+- RPC 运营方会看到请求 IP、查询方法和公开链上对象，并可能按其隐私政策记录日志；更换或新增 RPC 前必须复核该运营方的保留、日志和跨境处理条款。
+- 本应用不记录 RPC URL 或凭据，公开接口不返回 raw RPC 内容；但本机状态仍可能包含公开交易、地址和事件证据。
+
 ## 报告漏洞
 
 涉及密钥泄露、任意文件读取、远程请求伪造或本机权限的问题，请使用 GitHub 仓库的 **Security → Report a vulnerability** 私密报告入口，不要先创建公开 Issue。一般缺陷可提交公开 Issue，但务必先删除 API Key、日志、合约备注和个人路径。
