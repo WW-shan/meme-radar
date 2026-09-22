@@ -10,7 +10,7 @@ function cleanCandidate(candidate) {
 
 function defaultState() {
   return {
-    version: 2,
+    version: 3,
     status: 'STARTING',
     generatedAt: 0,
     lastAttemptAt: 0,
@@ -47,7 +47,7 @@ function migrateState(raw) {
   return {
     ...base,
     ...raw,
-    version: 2,
+    version: 3,
     scanInProgress: false,
     candidates: Array.isArray(raw.candidates) ? raw.candidates.map(cleanCandidate) : [],
     rejected: Array.isArray(raw.rejected) ? raw.rejected : [],
