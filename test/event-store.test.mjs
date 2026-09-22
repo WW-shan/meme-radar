@@ -69,11 +69,11 @@ test('event store fails closed on a corrupt line', async t => {
   await assert.rejects(store.read(), error => error.code === 'EVENT_STORE_CORRUPT');
 });
 
-test('state migrates v2 to v3 without dropping existing data', t => {
+test('state migrates v2 to v4 without dropping existing data', t => {
   const dir = temporary(t);
   fs.writeFileSync(path.join(dir, 'radar.json'), JSON.stringify({ version: 2, scanCount: 7, candidates: [{ address: 'A' }] }));
   const state = new RadarState(dir);
-  assert.equal(state.value.version, 3);
+  assert.equal(state.value.version, 4);
   assert.equal(state.value.scanCount, 7);
   assert.equal(state.value.candidates[0].address, 'A');
   assert.deepEqual(state.value.events, []);

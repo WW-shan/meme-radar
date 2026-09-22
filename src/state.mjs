@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { atomicJson, readJsonWithBackup } from './local-store.mjs';
+import { RiskMemory } from './analytics/risk-memory.mjs';
 
 function cleanCandidate(candidate) {
   if (!candidate || typeof candidate !== 'object') return candidate;
@@ -10,7 +11,7 @@ function cleanCandidate(candidate) {
 
 function defaultState() {
   return {
-    version: 3,
+    version: 4,
     status: 'STARTING',
     generatedAt: 0,
     lastAttemptAt: 0,
@@ -23,6 +24,7 @@ function defaultState() {
     supportedChains: ['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable'],
     chainStates: {},
     riskExclusions: {},
+    riskMemory: [],
     scanCount: 0,
     discoveredCount: 0,
     prequalifiedCount: 0,
@@ -46,10 +48,15 @@ function defaultState() {
 function migrateState(raw) {
   const base = defaultState();
   if (!raw || typeof raw !== 'object') return base;
+  const memory = new RiskMemory(
+    Array.isArray(raw.riskMemory) && raw.riskMemory.length ? raw.riskMemory : raw.riskExclusions || {}
+  );
   return {
     ...base,
     ...raw,
-    version: 3,
+    version: 4,
+    riskMemory: memory.serialize(),
+    riskExclusions: memory.toObject(Date.now()),
     scanInProgress: false,
     candidates: Array.isArray(raw.candidates) ? raw.candidates.map(cleanCandidate) : [],
     rejected: Array.isArray(raw.rejected) ? raw.rejected : [],

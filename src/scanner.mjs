@@ -9,6 +9,7 @@ import { tokenKey } from './local-store.mjs';
 import { DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
 import { productCapabilities } from './product/mode.mjs';
 import { scoreRisk } from './analytics/risk-engine.mjs';
+import { RiskMemory } from './analytics/risk-memory.mjs';
 import { LifecycleTracker, LIFECYCLE_ORDER } from './discovery/lifecycle.mjs';
 
 const numberOrNull = value => {
@@ -348,11 +349,12 @@ function addEvent(events, type, message, chain, data = {}) {
 }
 
 export class Scanner {
-  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [], creatorReputation = null }) {
+  constructor({ gmgn, secondary = null, state, controls = null, settings = config, chainSources = [], creatorReputation = null, riskMemory = null }) {
     this.gmgn = gmgn;
     this.secondary = secondary;
     this.chainSources = chainSources;
     this.creatorReputation = creatorReputation;
+    this.riskMemory = riskMemory;
     this.state = state;
     this.controls = controls;
     this.config = settings;
@@ -439,7 +441,7 @@ export class Scanner {
   }
 
   enqueueReview(chain, row) {
-    if (row?.address && this.state.value.riskExclusions?.[tokenKey(chain, row.address)]) return { accepted: false, reason: 'risk_excluded' };
+    if (row?.address && (this.riskMemory?.active(chain, row.address, Date.now()) || this.state.value.riskExclusions?.[tokenKey(chain, row.address)])) return { accepted: false, reason: 'risk_excluded' };
     const enabled = this.controls?.value.enabledChains || [this.activeChain];
     if (!enabled.includes(chain)) return { accepted: false, reason: 'chain_not_scanning' };
     if (!row || !discoveryScreen(row, { ...this.config, chain }).pass) return { accepted: false, reason: 'outside_audit_scope' };
@@ -467,7 +469,8 @@ export class Scanner {
     const keyEpoch = this.gmgn.keyEpoch;
     const startedAt = Date.now();
     const prior = structuredClone(this.state.value);
-    const riskExclusions = prior.riskExclusions || (prior.riskExclusions = {});
+    const riskMemory = this.riskMemory || new RiskMemory(prior.riskMemory || prior.riskExclusions || {});
+    const riskExclusions = riskMemory.toObject(startedAt);
     this.state.value.status = 'SCANNING';
     this.state.value.scanInProgress = true;
     this.state.value.cycleStartedAt = startedAt;
@@ -597,11 +600,17 @@ export class Scanner {
           }
           const deep = deepScreen({ discovery: item.row, audit, creatorReputation: this.creatorReputation }, settings);
           if (deep.chartRisk.status === 'REJECT') {
-            riskExclusions[tokenKey(chain, token.address)] = { chain, address: token.address,
-              at: Date.now(), version: CHART_RISK_VERSION, codes: deep.chartRisk.codes,
-              reasons: deep.chartRisk.reasons, from: deep.chartRisk.from, to: deep.chartRisk.to };
+            const record = riskMemory.remember({
+              chain, address: token.address, code: 'CHART_COLLAPSE', confidence: 1,
+              at: Date.now(), expiresAt: 0, permanent: true, version: CHART_RISK_VERSION,
+              codes: deep.chartRisk.codes, reasons: deep.chartRisk.reasons,
+              from: deep.chartRisk.from, to: deep.chartRisk.to
+            });
+            riskExclusions[tokenKey(chain, token.address)] = record;
+            this.riskMemory = riskMemory;
             // Persist immediately so a later source failure cannot erase the evidence.
             this.state.value.riskExclusions = riskExclusions;
+            this.state.value.riskMemory = riskMemory.serialize();
             this.state.save();
           }
           const baseClassification = classifyDeepResult(deep, audit._meta || {});
@@ -795,6 +804,8 @@ export class Scanner {
         outcomes,
         outcomeSummary: summarizeOutcomes(outcomes),
         lifecycle: lifecycle.snapshot(),
+        riskMemory: riskMemory.serialize(),
+        riskExclusions,
         creatorHistory: this.creatorReputation?.serialize?.() || prior.creatorHistory || [],
         sourceHealth: { discovery: discoveryHealth, lastAudit: lastAuditHealth, lastSecondary: lastSecondaryHealth },
         xCapability: { available: false, mode: 'manual', reason: 'X由用户点击链接人工复核' },
