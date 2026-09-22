@@ -129,6 +129,21 @@ export function voiceSnapshot(state, enabledChains) {
     }))])) };
 }
 
+function publicRisk(risk = null) {
+  if (!risk || typeof risk !== 'object') return null;
+  return {
+    version: text(risk.version, 32),
+    score: finiteOrNull(risk.score),
+    confidence: finiteOrNull(risk.confidence),
+    band: publicCode(risk.band),
+    reasons: (Array.isArray(risk.reasons) ? risk.reasons : []).slice(0, 20).map(reason => ({
+      code: publicCode(reason?.code),
+      value: finiteOrNull(reason?.value),
+      field: text(reason?.field, 64)
+    }))
+  };
+}
+
 function publicCandidate(row = {}) {
   const earlyExit = row.auditHealth?.earlyExit === true;
   const deep = row.deep || {};
@@ -157,10 +172,11 @@ function publicCandidate(row = {}) {
     sells: finite(row.sells),
     twitter: text(row.twitter, 80),
     gmgnUrl: externalUrl(row.gmgnUrl),
-    status: ['X_REVIEW', 'QUALIFIED'].includes(row.status) && !currentRules ? 'WAIT_RECHECK' : text(row.status, 32),
+    status: ['X_REVIEW', 'QUALIFIED'].includes(row.status) && !currentRules ? 'WAIT_RECHECK' : publicCode(row.risk?.band || row.status),
     auditedAt: finite(row.auditedAt),
     staleAt: finite(row.staleAt),
     reviewRevision: text(row.reviewRevision, 64),
+    risk: publicRisk(row.risk),
     auditHealth: { earlyExit },
     auditError: row.auditError ? '深度审计暂时失败，已进入等待复查。' : '',
     decisionReason: ['X_REVIEW', 'QUALIFIED'].includes(row.status) && !currentRules

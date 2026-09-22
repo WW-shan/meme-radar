@@ -8,6 +8,7 @@ import { collectOutcomeSamples, dueOutcomeJobs, outcomeCoverage, sampleRejected 
 import { tokenKey } from './local-store.mjs';
 import { DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
 import { productCapabilities } from './product/mode.mjs';
+import { scoreRisk } from './analytics/risk-engine.mjs';
 import { LifecycleTracker, LIFECYCLE_ORDER } from './discovery/lifecycle.mjs';
 
 const numberOrNull = value => {
@@ -639,7 +640,18 @@ export class Scanner {
               };
             }
           }
+          let risk = scoreRisk({
+            hardFatal: baseClassification.status === 'HARD_REJECT',
+            fatalReasons: baseClassification.hardFailed,
+            baseStatus: baseClassification.status,
+            entityHoldRate: deep.wallets?.entityHoldRate,
+            priorRugRate: deep.marketBehavior?.evidence?.priorRugRate,
+            liquidityUsd: deep.security?.liquidity,
+            unknownFields: deep.blockingUnknownFields,
+            freshnessMs: Date.now() - num(audit._meta?.auditedAt, Date.now())
+          });
           const classification = mergeSecondaryClassification(baseClassification, secondary);
+          if (classification.status !== risk.band) risk = { ...risk, band: classification.status };
           if (item.row._monitorOnly && classification.status === 'X_REVIEW') {
             classification.status = 'WAIT_RECHECK';
             classification.secondaryReason = '已离开发现范围，继续跟踪风险；不作为新的通过候选';
@@ -659,6 +671,7 @@ export class Scanner {
             decisionReason: [...deep.chartRisk.reasons, classification.secondaryReason, marketBehaviorReason].filter(Boolean).join('；'),
             auditHealth: audit._meta || { complete: true, endpoints: {} },
             lifecycleStage,
+            risk,
             info: {
               twitter: social.twitter,
               website: String(first(primaryWebsite, secondaryWebsite) || '')

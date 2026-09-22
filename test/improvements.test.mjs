@@ -152,6 +152,7 @@ test('scanner batch audits multiple candidates, saves per-chain history, and mul
   await scanner.cycle();
   assert.equal(audited,5);
   assert.equal(state.value.auditQueueStats.auditedThisCycle,5);
+  assert.equal(state.value.candidates[0].risk.version, 'risk-engine-v1');
   assert.equal(state.value.chainStates.bsc.scanCount,1);
   controls.setChains(['bsc','sol']); scanner.running=true;
   assert.equal(scanner.switchChain('sol').queued,false);
