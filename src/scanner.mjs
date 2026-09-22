@@ -105,19 +105,30 @@ function publicToken(row, screen, chain) {
     twitter: twitterHandle(twitter),
     gmgnUrl: String(row.link?.gmgn || ''),
     socialHints: {
-      followerCount: num(first(row.x_user_follower, row.x_follower)),
-      duplicateSocial
+      followerCount: numberOrNull(first(row.x_user_follower, row.x_follower)),
+      duplicateSocial,
+      accountCreatedAt: numberOrNull(first(row.x_user_created_at, row.account_created_at, row.twitter_created_at)),
+      observedAt: numberOrNull(first(row.observedAt, row.updated_at, row.open_timestamp * 1000, row.creation_timestamp * 1000)),
+      posts: Array.isArray(row.posts) ? row.posts : Array.isArray(row.social_posts) ? row.social_posts : null,
+      reusedHandles: Array.isArray(row.reused_handles) ? row.reused_handles : Array.isArray(row.reusedHandles) ? row.reusedHandles : null,
+      source: 'gmgn-discovery'
     }
   };
 }
 
 function socialFrom(token) {
+  const hints = token.socialHints || {};
   return {
     twitter: token.twitter,
     ...socialGate({
       twitter: token.twitter,
-      followerCount: token.socialHints.followerCount,
-      duplicateSocial: token.socialHints.duplicateSocial,
+      followerCount: hints.followerCount,
+      duplicateSocial: hints.duplicateSocial,
+      accountCreatedAt: hints.accountCreatedAt,
+      observedAt: hints.observedAt,
+      posts: hints.posts,
+      reusedHandles: hints.reusedHandles,
+      source: hints.source,
       capability: { available: false, mode: 'manual', reason: '当前采用X人工复核模式' }
     })
   };
@@ -762,6 +773,8 @@ export class Scanner {
               };
             }
           }
+          const social = socialFrom(token);
+          const socialUnknownFields = social.riskEligible ? [] : social.unknownFields;
           let risk = scoreRisk({
             hardFatal: baseClassification.status === 'HARD_REJECT',
             fatalReasons: baseClassification.hardFailed,
@@ -769,7 +782,7 @@ export class Scanner {
             entityHoldRate: deep.wallets?.entityHoldRate,
             priorRugRate: deep.marketBehavior?.evidence?.priorRugRate,
             liquidityUsd: deep.security?.liquidity,
-            unknownFields: deep.blockingUnknownFields,
+            unknownFields: [...new Set([...(deep.blockingUnknownFields || []), ...socialUnknownFields])],
             freshnessMs: Date.now() - num(audit._meta?.auditedAt, Date.now())
           });
           const classification = mergeSecondaryClassification(baseClassification, secondary);
@@ -778,7 +791,6 @@ export class Scanner {
             classification.status = 'WAIT_RECHECK';
             classification.secondaryReason = '已离开发现范围，继续跟踪风险；不作为新的通过候选';
           }
-          const social = socialFrom(token);
           const auditedAt = Date.now();
           const secondaryWebsite = secondary?.market?.websites?.[0] || '';
           const marketBehaviorReason = deep.marketBehavior?.downgradeReasons?.join('；') || '';

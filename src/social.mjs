@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { enrichSocial } from './enrichment/social.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,14 +18,42 @@ export async function xCapability() {
   }
 }
 
-export function socialGate({ twitter, followerCount = 0, duplicateSocial = null, capability }) {
-  if (!twitter) return { status: 'FAIL', score: 0, reason: '没有X账号' };
-  if (duplicateSocial === true) return { status: 'FAIL', score: 0, reason: '社媒链接疑似复用' };
+export function socialGate({
+  twitter,
+  followerCount = null,
+  duplicateSocial = null,
+  capability,
+  enrichment = null,
+  ...socialInput
+} = {}) {
+  const evidence = enrichment || enrichSocial({ handle: twitter, followerCount, ...socialInput });
+  const reusedHandle = duplicateSocial === true || evidence.reusedHandle === true;
+  const reusedHandleEvidence = reusedHandle
+    ? evidence.reusedHandleEvidence || { type: 'DUPLICATE_SOCIAL_FLAG', handle: evidence.handle || twitter, source: 'duplicateSocial' }
+    : evidence.reusedHandleEvidence;
+  const base = {
+    twitter,
+    enrichment: evidence,
+    unknownFields: evidence.unknownFields,
+    dataComplete: evidence.dataComplete,
+    riskEligible: evidence.riskEligible,
+    accountAgeDays: evidence.accountAgeDays,
+    duplicatePostRate: evidence.duplicatePostRate,
+    reusedHandle: reusedHandle ? true : evidence.reusedHandle,
+    reusedHandleEvidence,
+    evidenceType: reusedHandleEvidence?.type || ''
+  };
+  if (!twitter) return { ...base, status: 'FAIL', score: 0, reason: '没有X账号' };
+  if (reusedHandle) {
+    return { ...base, status: 'UNVERIFIED', score: 0, reason: '检测到社媒复用证据，需人工复核' };
+  }
   if (!capability?.available) {
-    return { status: 'UNVERIFIED', score: 0, reason: capability?.reason || '无法读取X评论，不能确认真人社区' };
+    return { ...base, status: 'UNVERIFIED', score: 0, reason: capability?.reason || '无法读取X评论，不能确认真人社区' };
   }
   return {
-    status: 'UNVERIFIED', score: 0,
+    ...base,
+    status: 'UNVERIFIED',
+    score: 0,
     reason: `已检测到X后端${capability.backend}，评论真实性解析器尚未完成联调`
   };
 }

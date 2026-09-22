@@ -263,7 +263,19 @@ function publicCandidate(row = {}) {
       status: text(social.status, 24),
       score: finite(social.score),
       reason: publicMessage(social.reason, 'X社区需要人工复核。', 160),
-      twitter: text(social.twitter, 80)
+      twitter: text(social.twitter, 80),
+      dataComplete: social.dataComplete === true,
+      riskEligible: social.riskEligible === true,
+      accountAgeDays: finiteOrNull(social.accountAgeDays),
+      duplicatePostRate: finiteOrNull(social.duplicatePostRate),
+      reusedHandle: social.reusedHandle === true ? true : social.reusedHandle === false ? false : null,
+      evidenceType: text(social.evidenceType, 48),
+      source: text(social.enrichment?.source, 80),
+      collectedAt: finiteOrNull(social.enrichment?.collectedAt),
+      unknownFields: Array.isArray(social.unknownFields) ? social.unknownFields.slice(0, 16).map(value => text(value, 64)) : [],
+      contentFingerprints: Array.isArray(social.enrichment?.contentFingerprints)
+        ? social.enrichment.contentFingerprints.slice(0, 20).map(value => text(value, 64))
+        : []
     },
     info: {
       twitter: text(info.twitter, 80),
