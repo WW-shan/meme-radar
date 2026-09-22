@@ -125,7 +125,34 @@ npm run open
 
 前台运行用 `npm start`；检查环境用 `npm run doctor`；测试用 `npm test`。端口占用时可通过 `RADAR_PORT` 指定另一端口；启动器不会覆盖其他程序或另一份项目。
 
-GMGN 客户端固定为项目依赖 `gmgn-cli@1.5.7`，雷达直接使用其中的只读客户端。开源版不会读取环境变量、旧的 GMGN 全局配置或项目 `.env`；只有在当前开源版页面完成 Agent 公钥创建步骤并通过读取权限验证的 Key 才会生效。连接验证和日常扫描都不向请求进程传递认证私钥或调试开关，也不会调用 `follow-wallet`、swap 或下单接口；任何网页响应都不会返回私钥。
+### 直接链上事件源（可选）
+
+直接链上来源默认关闭，打开后仍需配置 RPC 和事件范围；没有配置时会明确显示为 `UNCONFIGURED`，不会把空事件当作安全结果。已处理过的 Solana/EVM 游标保存在 `state/chain-cursors.json`，重启不会从旧区块重扫或跳过未处理区块。
+
+```bash
+export RADAR_CHAIN_EVENTS=1
+export SOLANA_RPC_URL='https://your-solana-rpc.example'
+export SOLANA_MIGRATION_AUTHORITY='migration-authority-address'
+export SOLANA_MIGRATION_PROGRAM='migration-program-id'
+export BSC_RPC_URL='https://your-bsc-rpc.example'
+export RADAR_EVM_START_BLOCKS='{"bsc":123000000}'
+export RADAR_EVM_FACTORIES='{"bsc":[{"address":"0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73","topic":"0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9","tokenTopicIndexes":[1,2],"excludeTokens":["0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"]}]}'
+```
+
+`RADAR_EVM_FACTORIES` 使用严格 JSON；地址、topic 和排除币必须校验通过，否则启动失败。`RADAR_EVM_START_BLOCKS` 只在没有本地游标时使用。`npm run test:live -- --chains sol,bsc,eth --blocks 1000` 会实际访问公共 RPC 并报告解析到的事件数；未配置项目 GMGN Key 时会明确返回 `SKIPPED`，不会伪装为通过。
+
+### 评测数据
+
+发现事件和 H24 完成后的结果事件会写入 `state/events/`。生成 point-in-time 数据集并运行 walk-forward：
+
+```bash
+npm run dataset -- --input state/events --cutoff 2026-09-23 --output state/reports/dataset.json
+node scripts/backtest.mjs --input state/reports/dataset.json --output state/reports/backtest.json
+```
+
+数据集只保留显式特征白名单，缺标签保持 `UNKNOWN`；报告与原始事件都只保存在本机，不应提交或发布。
+
+GMGN 客户端固定为项目依赖 `gmgn-cli@1.5.7`，雷达直接使用其中的只读客户端。GMGN 凭据不会读取环境变量、旧的 GMGN 全局配置或项目 `.env`；只有在当前开源版页面完成 Agent 公钥创建步骤并通过读取权限验证的 Key 才会生效。连接验证和日常扫描都不向请求进程传递认证私钥或调试开关，也不会调用 `follow-wallet`、swap 或下单接口；任何网页响应都不会返回私钥。
 
 运行记录在 `state/`、日志在 `logs/`、自动下载的运行环境在 `.runtime/`，这些本机目录不应加入版本库或发布包。`node_modules/` 不加入源码版本库；Windows 便携包附带运行所需依赖。不要把 API Key 放进截图、代码或日志。
 

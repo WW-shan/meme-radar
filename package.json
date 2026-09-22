@@ -23,6 +23,8 @@
     "open": "node scripts/open.mjs",
     "doctor": "node scripts/setup.mjs --check",
     "release:audit": "node scripts/release-audit.mjs",
+    "dataset": "node scripts/dataset.mjs",
+    "test:live": "node scripts/testing/live-integration.mjs",
     "once": "node --use-env-proxy src/main.mjs --once",
     "test": "node --test"
   },

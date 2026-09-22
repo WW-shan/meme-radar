@@ -53,6 +53,17 @@ test('event store rejects incomplete events and unknown stages', async t => {
   await assert.rejects(store.append(event({ stage: 'not-a-stage' })), /invalid event/);
 });
 
+test('event store accepts completed outcome snapshots as immutable evidence', async t => {
+  const store = new EventStore(temporary(t));
+  const row = await store.append(event({
+    source: 'radar-outcome',
+    stage: 'outcome',
+    normalized: { kind: 'outcome', label: 'SUCCESS', success: true, rug: false }
+  }));
+  assert.equal(row.stage, 'outcome');
+  assert.equal((await store.read({ stage: 'outcome' })).length, 1);
+});
+
 test('event store filters by chain and stage and sorts by observation time', async t => {
   const store = new EventStore(temporary(t));
   await store.append(event({ observedAt: 2000, stage: 'completed' }));
@@ -119,4 +130,38 @@ test('scanner persists every staged discovery event and queries it by time and s
   assert.equal(rows[0].token.address, row.address);
   assert.deepEqual(rows[0].raw, row.raw);
   assert.deepEqual(rows[0].normalized, row.normalized);
+});
+
+test('scanner persists a completed outcome snapshot once for evaluation joins', async t => {
+  const dir = temporary(t);
+  const store = new EventStore(dir);
+  const state = new RadarState(path.join(dir, 'state'));
+  const scanner = new Scanner({
+    gmgn: { keyEpoch: 0, nextAllowedAt: 0, disabled: false, metrics: {} },
+    state,
+    eventStore: store,
+    settings: { ...config, chain: 'bsc' }
+  });
+  const address = '0x' + '3'.repeat(40);
+  const baselineAt = 1_800_000_000_000;
+  const observedAt = baselineAt + 24 * 60 * 60_000;
+  const row = {
+    chain: 'bsc', address, symbol: 'DONE', creatorAddress: '0x' + '4'.repeat(40),
+    baselineAt, baselinePrice: 1, riskScore: .77, riskVersion: 'risk-v1',
+    samples: { h24: { at: observedAt, collectedAt: observedAt, price: 3, return: 2, failedRead: false } },
+    path: {
+      version: 'outcome-path-v1', peak: 3, maxDrawdown: 0, firstRugAt: null,
+      observations: [{ at: baselineAt, price: 1 }, { at: observedAt, price: 3, return: 2, failedRead: false }],
+      coverage: { expected: 7, completed: 7, missing: 0, ratio: 1, complete: true }
+    }
+  };
+
+  assert.equal(await scanner.persistOutcomeEvents([row], 'bsc'), 1);
+  assert.equal(await scanner.persistOutcomeEvents([row], 'bsc'), 1);
+  const rows = await store.read({ stage: 'outcome' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].token.address, address);
+  assert.equal(rows[0].normalized.label, 'SUCCESS');
+  assert.equal(rows[0].normalized.riskScore, .77);
+  assert.equal(rows[0].observedAt, observedAt);
 });

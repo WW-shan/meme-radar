@@ -291,3 +291,36 @@ export function outcomeCoverage(outcomes, now = Date.now()) {
   };
   return { passed: cohort('X_REVIEW'), rejected: cohort('HARD_REJECT') };
 }
+
+export function confirmedCreatorOutcome(row = {}) {
+  const creator = String(row.creatorAddress || '').trim();
+  const chain = String(row.chain || '').toLowerCase();
+  const token = String(row.address || '').trim();
+  const baselineAt = numberOrNull(row.baselineAt, 0);
+  const sample = row.samples?.h24;
+  const observedAt = numberOrNull(sample?.collectedAt ?? sample?.at, 0);
+  if (!creator || !token || baselineAt === null || observedAt === null
+    || sample?.failedRead === true || positiveOrNull(sample?.price) === null) return null;
+  const benchmark = numberOrNull(sample.return);
+  const firstRugAt = numberOrNull(row.path?.firstRugAt, 0);
+  const outcome = firstRugAt !== null ? 'rug' : benchmark !== null && benchmark >= 1 ? 'success' : 'unknown';
+  return {
+    chain,
+    creator,
+    token,
+    observedAt,
+    outcome,
+    source: 'outcome-h24-v1',
+    timeToRugMs: firstRugAt === null ? null : Math.max(0, firstRugAt - baselineAt)
+  };
+}
+
+export function recordConfirmedCreatorOutcomes(reputation, outcomes) {
+  if (!reputation || typeof reputation.recordOnce !== 'function') return 0;
+  let count = 0;
+  for (const row of Array.isArray(outcomes) ? outcomes : []) {
+    const confirmed = confirmedCreatorOutcome(row);
+    if (confirmed && reputation.recordOnce(confirmed)) count++;
+  }
+  return count;
+}

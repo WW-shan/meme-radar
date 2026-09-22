@@ -209,6 +209,31 @@ test('deep screen accepts strict chain data with empirical sell evidence and kno
   assert.equal(result.checks.entityGraph, true);
 });
 
+test('deep screen incorporates explicit bundle evidence and exposes traceable counts', () => {
+  const holders = validHolders();
+  const first = holders[0].address;
+  const second = holders[1].address;
+  const result = deepScreen({
+    discovery: {
+      address, market_cap: 50_000, liquidity: 10_000, sells_24h: 20, rug_ratio: .1,
+      top_10_holder_rate: .2, bundler_rate: .05, rat_trader_amount_rate: .05,
+      top70_sniper_hold_rate: .02, is_wash_trading: false, creator_token_status: 'creator_close', lock_percent: .9
+    },
+    audit: {
+      info: { liquidity: 10_000, price: { sells_5m: 3, sells_24h: 20 } },
+      security: { open_source: 'yes', owner_renounced: 'yes', buy_tax: .01, sell_tax: .01, rug_ratio: .1,
+        top_10_holder_rate: .2, creator_token_status: 'creator_close', rat_trader_amount_rate: .05,
+        bundler_trader_amount_rate: .05, top70_sniper_hold_rate: .02, is_wash_trading: false, lock_percent: .9 },
+      pool: { liquidity: 10_000 }, holders, traders: recentTraders(), candles: candles(),
+      entityEvidence: [{ type: 'bundle', wallets: [first, second], transactionHash: '0xtx', confidence: .95 }]
+    },
+    nowMs: nowSec * 1000
+  }, config);
+  assert.equal(result.wallets.entityWalletCount, 2);
+  assert.equal(result.wallets.bundleCount, 1);
+  assert.equal(result.wallets.entityEvidence.some(row => row.type === 'bundle' && row.transactionHash === '0xtx'), true);
+});
+
 test('deep screen reuses nested token-info dev and stat fields without another request', () => {
   const result = deepScreen({
     discovery: { liquidity: 10_000, sells_24h: 20 },

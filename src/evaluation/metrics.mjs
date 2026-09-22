@@ -7,6 +7,11 @@ function finiteOrNull(value) {
 }
 
 function labelOrNull(value) {
+  if (value && typeof value === 'object') {
+    if (value.rug === true && value.success !== true) return 0;
+    if (value.success === true && value.rug !== true) return 1;
+    return null;
+  }
   if (value === true || value === 1 || value === '1') return 1;
   if (value === false || value === 0 || value === '0') return 0;
   return null;

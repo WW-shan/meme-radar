@@ -13,3 +13,12 @@
 npm test
 npm run release:audit
 ```
+
+可选验证：
+
+```bash
+npm run test:live -- --chains sol,bsc,eth --blocks 1000
+npm run dataset -- --input state/events --output state/reports/dataset.json
+```
+
+联网冒烟测试只读取公开 RPC；没有本机 GMGN Key 时对应检查必须显示 `SKIPPED`。数据集命令只处理本机 `state/events/`，不得把运行数据提交到版本库。

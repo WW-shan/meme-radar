@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const STAGES = new Set(['new_creation', 'near_completion', 'completed', 'migrated', 'signal']);
+const STAGES = new Set(['new_creation', 'near_completion', 'completed', 'migrated', 'signal', 'outcome']);
 
 function stable(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);

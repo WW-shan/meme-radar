@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { discoveryScreen, deepScreen, marketCap, createdAt } from './scoring.mjs';
 import { socialGate } from './social.mjs';
 import { tokenInfoPrice } from './gmgn.mjs';
-import { collectOutcomeSamples, createOutcome, dueOutcomeJobs, outcomeCoverage, sampleRejected, updateOutcomePath } from './outcomes.mjs';
+import { collectOutcomeSamples, createOutcome, dueOutcomeJobs, outcomeCoverage, recordConfirmedCreatorOutcomes, sampleRejected, updateOutcomePath } from './outcomes.mjs';
 import { tokenKey } from './local-store.mjs';
 import { DISCOVERY_SOURCE, DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
 import { productCapabilities } from './product/mode.mjs';
@@ -350,6 +350,7 @@ export function upsertOutcome(outcomes, candidate, now) {
     latestDecision: candidate.status,
     latestFailed: candidate.deep?.failed || [],
     lastAuditedAt: candidate.auditedAt,
+    creatorAddress: candidate.creatorAddress,
     riskScore: numberOrNull(candidate.risk?.score),
     riskVersion: candidate.risk?.version
   }));
@@ -572,6 +573,55 @@ export class Scanner {
             code: 'EVENT_STORE_WRITE_FAILED', cause: error
           });
         }
+      }
+    }
+    return count;
+  }
+
+  async persistOutcomeEvents(outcomeRows, chain) {
+    if (!this.eventStore) return 0;
+    let count = 0;
+    for (const row of Array.isArray(outcomeRows) ? outcomeRows : []) {
+      if (row?.path?.coverage?.complete !== true) continue;
+      const observations = Array.isArray(row.path.observations) ? row.path.observations : [];
+      const observedAt = Math.max(...observations.map(item => num(item?.at, -1)));
+      if (!row?.address || !Number.isFinite(observedAt) || observedAt < 0) {
+        throw Object.assign(new Error('completed outcome has no valid observation time'), { code: 'INVALID_OUTCOME_EVENT' });
+      }
+      const h24 = row.samples?.h24;
+      const success = h24?.failedRead !== true && numberOrNull(h24?.return) !== null && numberOrNull(h24.return) >= 1 && !row.path.firstRugAt;
+      const label = row.path.firstRugAt ? 'RUG' : success ? 'SUCCESS' : 'NEUTRAL';
+      try {
+        await this.eventStore.append({
+          source: 'radar-outcome',
+          chain,
+          stage: 'outcome',
+          token: { address: String(row.address), symbol: String(row.symbol || ''), name: String(row.name || '') },
+          observedAt,
+          raw: {
+            baselineAt: row.baselineAt,
+            baselinePrice: row.baselinePrice,
+            creatorAddress: row.creatorAddress || null,
+            riskScore: numberOrNull(row.riskScore),
+            riskVersion: row.riskVersion || null,
+            path: structuredClone(row.path)
+          },
+          normalized: {
+            kind: 'outcome',
+            label,
+            rug: Boolean(row.path.firstRugAt),
+            success,
+            firstRugAt: numberOrNull(row.path.firstRugAt),
+            maxDrawdown: numberOrNull(row.path.maxDrawdown),
+            riskScore: numberOrNull(row.riskScore),
+            coverage: structuredClone(row.path.coverage)
+          }
+        });
+        count++;
+      } catch (error) {
+        throw Object.assign(new Error('结果事件未能写入append-only存储，本轮停止以避免生成不完整数据集'), {
+          code: 'EVENT_STORE_WRITE_FAILED', cause: error
+        });
       }
     }
     return count;
@@ -927,7 +977,8 @@ export class Scanner {
             info: {
               twitter: social.twitter,
               website: String(first(primaryWebsite, secondaryWebsite) || '')
-            }
+            },
+            creatorAddress: String(deep.marketBehavior?.evidence?.creatorAddress || '')
           };
           const previousCandidate = candidatesByAddress.get(addressKey(token.address));
           candidate.reviewEvidence = reviewRevision(candidate);
@@ -995,6 +1046,12 @@ export class Scanner {
       for (const job of sampleJobs) {
         await collectOutcomeSamples([job.row], this.gmgn, job.chain, { limit: 1, deadline: startedAt + (settings.auditCycleBudgetMs || 80_000) + 25_000 });
       }
+      const creatorRecordsAdded = Object.values(outcomeScopes)
+        .reduce((sum, rows) => sum + recordConfirmedCreatorOutcomes(this.creatorReputation, rows), 0);
+      if (creatorRecordsAdded) {
+        events = addEvent(events, 'CREATOR_HISTORY_UPDATED', `已写入${creatorRecordsAdded}条确认后的创建者结果`, chain);
+      }
+      for (const [id, rows] of Object.entries(outcomeScopes)) await this.persistOutcomeEvents(rows, id);
       for (const [id, rows] of Object.entries(outcomeScopes)) {
         if (id !== chain && prior.chainStates?.[id]) prior.chainStates[id].outcomeSummary = summarizeOutcomes(rows);
       }

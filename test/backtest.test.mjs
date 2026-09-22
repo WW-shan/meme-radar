@@ -35,6 +35,17 @@ test('classification metrics report precision, recall, AUPRC, Brier, calibration
   assert.equal(metrics.calibrationBins.at(-1).max, 1);
 });
 
+test('classification metrics accept nested point-in-time dataset labels', () => {
+  const metrics = evaluateClassification([
+    { score: .9, label: { status: 'LABELED', success: true, rug: false } },
+    { score: .2, label: { status: 'LABELED', success: false, rug: true } },
+    { score: .7, label: { status: 'UNKNOWN', success: null, rug: null } }
+  ], { threshold: .5 });
+  assert.equal(metrics.sampleCount, 2);
+  assert.equal(metrics.precision, 1);
+  assert.equal(metrics.recall, 1);
+});
+
 test('classification metrics handle empty, missing labels, all-negative and class imbalance without fake values', () => {
   const empty = evaluateClassification([], { threshold: .5 });
   assert.equal(empty.sampleCount, 0);

@@ -17,7 +17,9 @@ function median(values) {
 export class CreatorReputation {
   constructor(rows = [], { minimumSamples = 3 } = {}) {
     this.minimumSamples = Math.max(1, Number(minimumSamples) || 3);
-    this.rows = Array.isArray(rows) ? rows.map(row => ({ ...row })) : [];
+    this.rows = [];
+    this.byToken = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) this.record(row);
   }
 
   record(row = {}) {
@@ -30,8 +32,23 @@ export class CreatorReputation {
       || !token || !Number.isFinite(observedAt) || observedAt < 0 || !OUTCOMES.has(outcome)) {
       throw Object.assign(new Error('invalid creator history record'), { code: 'INVALID_CREATOR_HISTORY' });
     }
-    this.rows.push({ ...row, chain, creator, token, observedAt, outcome });
+    const normalized = { ...row, chain, creator, token, observedAt, outcome };
+    const key = `${chain}\u0000${creator}\u0000${token}`;
+    const existing = this.byToken.get(key);
+    if (existing) {
+      if (existing.outcome === outcome && existing.observedAt === observedAt) return this;
+      throw Object.assign(new Error('conflicting creator history record'), { code: 'CONFLICTING_CREATOR_HISTORY' });
+    }
+    this.byToken.set(key, normalized);
+    this.rows.push(normalized);
     return this;
+  }
+
+  recordOnce(row = {}) {
+    const key = `${String(row.chain || '').toLowerCase()}\u0000${String(row.creator || '').trim()}\u0000${String(row.token || '').trim()}`;
+    if (this.byToken.has(key)) return false;
+    this.record(row);
+    return true;
   }
 
   snapshot(chain, creator, at) {

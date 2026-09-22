@@ -585,6 +585,7 @@ export function deepScreen({ discovery, audit, nowMs = Date.now(), creatorReputa
   const lpBurned = lower(sec.burnStatus) === 'burn';
   const wallets = analyzeWallets(audit.holders, config);
   const entityGraph = new EntityGraph({ minCoBuyEvidence: 2 });
+  let entityEvidenceComplete = wallets.dataComplete;
   const holdRates = {};
   for (const holder of Array.isArray(audit.holders) ? audit.holders : []) {
     const address = normalizeAddress(holder?.address, config.chain);
@@ -594,13 +595,29 @@ export function deepScreen({ discovery, audit, nowMs = Date.now(), creatorReputa
     const source = normalizeAddress(first(holder.native_transfer?.from_address, holder.native_transfer?.address), config.chain);
     if (source) entityGraph.addFunding(address, source);
   }
+  for (const evidence of Array.isArray(audit.entityEvidence) ? audit.entityEvidence : []) {
+    const walletsFromEvidence = (Array.isArray(evidence?.wallets) ? evidence.wallets : [])
+      .map(wallet => normalizeAddress(wallet, config.chain));
+    if (walletsFromEvidence.some(wallet => !wallet) || new Set(walletsFromEvidence).size < 2) {
+      entityEvidenceComplete = false;
+      continue;
+    }
+    try {
+      if (evidence.type === 'bundle') entityGraph.addBundle(walletsFromEvidence, evidence);
+      else if (evidence.type === 'cross_launch_cohort') entityGraph.addLaunchCohort(walletsFromEvidence, evidence.launches, evidence);
+    } catch {
+      entityEvidenceComplete = false;
+    }
+  }
   const walletAddresses = Object.keys(holdRates);
-  const entity = entityMetrics(entityGraph, walletAddresses, holdRates, { dataComplete: wallets.dataComplete });
+  const entity = entityMetrics(entityGraph, walletAddresses, holdRates, { dataComplete: entityEvidenceComplete });
   const walletsWithEntities = {
     ...wallets,
     entityHoldRate: entity.entityHoldRate,
     bundleHoldRate: entity.bundleHoldRate,
     coBuyCount: entity.coBuyCount,
+    bundleCount: entity.bundleCount,
+    launchCohortCount: entity.launchCohortCount,
     entityDataComplete: entity.entityDataComplete,
     entityWalletCount: entity.entityWalletCount,
     entityEvidence: entity.entityEvidence
