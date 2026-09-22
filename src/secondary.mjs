@@ -1,3 +1,5 @@
+import { enrichDomain } from './enrichment/domain.mjs';
+
 const DEX_CHAIN_IDS = Object.freeze({ sol: 'solana', bsc: 'bsc', base: 'base', eth: 'ethereum' });
 const GOPLUS_EVM_CHAIN_IDS = Object.freeze({ eth: '1', bsc: '56', base: '8453' });
 
@@ -386,7 +388,13 @@ export class SecondaryValidator {
     timeoutMs = 8_000,
     maxResponseBytes = DEFAULT_MAX_BYTES,
     now = () => Date.now(),
-    conflictThresholds = { price: 0.10, marketCap: 0.20, liquidity: 0.25 }
+    conflictThresholds = { price: 0.10, marketCap: 0.20, liquidity: 0.25 },
+    domainEnrichment = true,
+    domainMaxBytes = 512 * 1024,
+    domainMaxHtmlBytes = 1024 * 1024,
+    domainTimeoutMs = null,
+    domainLookupImpl = undefined,
+    knownAssets = []
   } = {}) {
     if (typeof fetchImpl !== 'function') throw new TypeError('fetch implementation is required');
     this.fetchImpl = fetchImpl;
@@ -398,6 +406,12 @@ export class SecondaryValidator {
       marketCap: optionalRate(conflictThresholds.marketCap) ?? 0.20,
       liquidity: optionalRate(conflictThresholds.liquidity) ?? 0.25
     };
+    this.domainEnrichment = domainEnrichment !== false;
+    this.domainMaxBytes = Math.max(1, Number(domainMaxBytes) || 512 * 1024);
+    this.domainMaxHtmlBytes = Math.max(1, Number(domainMaxHtmlBytes) || 1024 * 1024);
+    this.domainTimeoutMs = Math.max(1, Number(domainTimeoutMs) || this.timeoutMs);
+    this.domainLookupImpl = domainLookupImpl;
+    this.knownAssets = Array.isArray(knownAssets) ? knownAssets : [];
   }
 
   async validate({ chain, tokenAddress, primary = {} }) {
@@ -439,11 +453,32 @@ export class SecondaryValidator {
       security = goPlusResult.security;
     }
     const conflicts = buildConflicts(primary, market, security, this.conflictThresholds);
+    let domain = null;
+    const website = cleanString(primary?.info?.website || primary?.market?.website || primary?.website || market.websites[0], 2048);
+    if (this.domainEnrichment && website) {
+      try {
+        domain = await enrichDomain({
+          website,
+          html: primary?.html,
+          fetchImpl: this.fetchImpl,
+          lookupImpl: this.domainLookupImpl,
+          maxBytes: this.domainMaxBytes,
+          maxHtmlBytes: this.domainMaxHtmlBytes,
+          timeoutMs: this.domainTimeoutMs,
+          knownAssets: this.knownAssets,
+          now: this.now
+        });
+        sources.domain = sourceState('OK');
+      } catch (error) {
+        domain = { status: 'ERROR', errorCode: errorCode(error), faviconHash: null, sharedAsset: false, riskEvidence: [] };
+        sources.domain = sourceState('ERROR', { errorCode: domain.errorCode });
+      }
+    }
     const complete = sources.dexScreener.status === 'OK' && sources.goPlus.status === 'OK'
       && market.complete && security.complete;
     return {
       status: complete ? 'COMPLETE' : 'DEGRADED', complete, checkedAt: this.now(),
-      chain: normalizedChain, tokenAddress: address, sources, market, security, conflicts
+      chain: normalizedChain, tokenAddress: address, sources, market, security, conflicts, domain
     };
   }
 
