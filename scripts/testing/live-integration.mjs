@@ -80,7 +80,10 @@ async function checkGmgn(keyProvider, client) {
   const key = await keyProvider();
   if (!key) return { status: 'SKIPPED', reason: 'GMGN project key is not configured' };
   try {
-    const gmgn = client || new GmgnClient({ apiKeyProvider: keyProvider, legacyKeyProvider: () => '' });
+    // GmgnClient reads its key synchronously when it launches each worker. Pass
+    // the already-resolved value instead of the async provider, otherwise the
+    // Promise is treated as an empty key and live checks falsely report auth failure.
+    const gmgn = client || new GmgnClient({ apiKeyProvider: () => key, legacyKeyProvider: () => '' });
     const adapter = await gmgn.probe();
     if (adapter.status !== 'OK') return { status: 'FAIL', errorCode: adapter.code || 'GMGN_ADAPTER_INCOMPATIBLE' };
     const rows = await gmgn.discover('sol');

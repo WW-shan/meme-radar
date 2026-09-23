@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runLiveIntegration } from '../scripts/testing/live-integration.mjs';
+import { GmgnClient } from '../src/gmgn.mjs';
 
 function rpcResponse(result) {
   return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }), {
@@ -43,4 +44,25 @@ test('live integration fails closed when an enabled RPC is unavailable', async (
   assert.equal(result.ok, false);
   assert.equal(result.checks.evm.eth.status, 'FAIL');
   assert.match(result.checks.evm.eth.errorCode, /CHAIN_RPC/);
+});
+
+test('live integration resolves an async GMGN key provider before constructing the client', async () => {
+  const key = `gmgn_${'a'.repeat(32)}`;
+  const originalRun = GmgnClient.prototype.run;
+  let seenKey = '';
+  GmgnClient.prototype.run = async function () {
+    seenKey = this.apiKey();
+    return { completed: [], rank: [] };
+  };
+  try {
+    const result = await runLiveIntegration({
+      fetchImpl: async () => { throw new Error('unexpected RPC request'); },
+      keyProvider: async () => key,
+      chains: []
+    });
+    assert.equal(result.checks.gmgn.status, 'OK');
+    assert.equal(seenKey, key);
+  } finally {
+    GmgnClient.prototype.run = originalRun;
+  }
 });
