@@ -3,6 +3,8 @@ import { SolanaEventSource } from './solana-source.mjs';
 import { EvmEventSource } from './evm-source.mjs';
 import { ChainCursorStore } from './cursor-store.mjs';
 
+export const EVM_HEAD_LAG_BLOCKS = 3;
+
 function unconfigured(message) {
   return Object.assign(new Error(message), { code: 'CHAIN_SOURCE_UNCONFIGURED' });
 }
@@ -59,8 +61,11 @@ export function createChainEventSources(config = {}, { fetchImpl = globalThis.fe
       name: `evm-${chain}-pool`,
       read: async requestedChain => {
         if (requestedChain !== chain) throw unconfigured(`EVM source only supports ${chain}`);
-        const latestBlock = Number(BigInt(await rpc.call('eth_blockNumber')));
-        if (!Number.isSafeInteger(latestBlock) || latestBlock < 0) throw new Error('invalid latest block');
+        const reportedHead = Number(BigInt(await rpc.call('eth_blockNumber')));
+        if (!Number.isSafeInteger(reportedHead) || reportedHead < 0) throw new Error('invalid latest block');
+        // Load-balanced RPCs may answer eth_getLogs from a node behind the one that
+        // reported the head; trailing it avoids "block range beyond head" failures.
+        const latestBlock = Math.max(0, reportedHead - EVM_HEAD_LAG_BLOCKS);
         if (nextBlock === null) {
           nextBlock = configuredStart > 0
             ? configuredStart

@@ -82,15 +82,16 @@ test('EVM source walks a real RPC backlog in contiguous chunks across process re
   assert.ok(first.rows[0].observedAt <= Date.now(), 'discovery rows must never be future dated');
   for (let index = 0; index < 5; index++) await readOnce('bsc');
   const ranges = rpc.logs().map(row => [Number(row.fromBlock), Number(row.toBlock)]);
-  assert.deepEqual(ranges[0], [4501, 4600]);
+  // Queries end EVM_HEAD_LAG_BLOCKS (3) behind the reported head.
+  assert.deepEqual(ranges[0], [4498, 4597]);
   for (let index = 1; index < ranges.length; index++) {
     assert.equal(ranges[index][0], ranges[index - 1][1] + 1, 'backfill must not skip or overlap blocks');
   }
-  assert.deepEqual(ranges.at(-1), [4901, 5000]);
+  assert.deepEqual(ranges.at(-1), [4898, 4997]);
   const settled = await readOnce('bsc');
   assert.deepEqual(settled.rows, []);
   assert.equal(rpc.logs().length, ranges.length, 'a caught-up source must not issue more log queries');
-  assert.equal(new ChainCursorStore(directory).get('evm-bsc-pool'), latest);
+  assert.equal(new ChainCursorStore(directory).get('evm-bsc-pool'), latest - 3);
 });
 
 test('EVM source reports a broken RPC endpoint as health ERROR without advancing its cursor', async t => {

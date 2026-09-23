@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { config } from '../../src/config.mjs';
 import { JsonRpcClient } from '../../src/chain/rpc.mjs';
 import { EvmEventSource } from '../../src/chain/evm-source.mjs';
+import { EVM_HEAD_LAG_BLOCKS } from '../../src/chain/sources.mjs';
 import { GmgnClient } from '../../src/gmgn.mjs';
 import { GmgnKeyStore } from '../../src/gmgn-key-store.mjs';
 
@@ -62,15 +63,16 @@ async function checkEvm(chain, url, fetchImpl, blocks) {
   const factories = DEFAULT_FACTORIES[chain] || [];
   if (!factories.length) return { status: 'OK', endpoint: url, latestBlock, events: null, sourceConfigured: false };
   const span = Math.max(1, Math.min(10_000, Number(blocks) || 1000));
-  const fromBlock = Math.max(0, latestBlock - span);
+  const toBlock = Math.max(0, latestBlock - EVM_HEAD_LAG_BLOCKS);
+  const fromBlock = Math.max(0, toBlock - span);
   const polled = await new EvmEventSource({ rpc, factories: { [chain]: factories } })
-    .poll({ chain, fromBlock, toBlock: latestBlock });
+    .poll({ chain, fromBlock, toBlock });
   return {
     status: 'OK',
     endpoint: url,
     latestBlock,
     fromBlock,
-    toBlock: latestBlock,
+    toBlock,
     events: polled.events.length,
     sourceConfigured: true
   };

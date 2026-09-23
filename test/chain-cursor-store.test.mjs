@@ -60,11 +60,12 @@ test('EVM source resumes from the persisted next block after a restart', async t
     evmStartBlocks: { bsc: 10 }
   };
 
-  const first = rpcFetch({ latestBlock: 12 });
+  // Reported heads trail by EVM_HEAD_LAG_BLOCKS (3): safe heads are 12 and 14.
+  const first = rpcFetch({ latestBlock: 15 });
   await createChainEventSources(config, { fetchImpl: first.fetchImpl })[1].read('bsc');
   assert.equal(new ChainCursorStore(directory).get('evm-bsc-pool'), 12);
 
-  const second = rpcFetch({ latestBlock: 14 });
+  const second = rpcFetch({ latestBlock: 17 });
   await createChainEventSources(config, { fetchImpl: second.fetchImpl })[1].read('bsc');
   const lookup = second.calls.find(call => call.method === 'eth_getLogs');
   assert.deepEqual(lookup.params[0].fromBlock, '0xd');

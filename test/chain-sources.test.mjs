@@ -169,7 +169,7 @@ test('configured Solana and EVM sources emit orchestrator-ready rows through the
   assert.equal(evmResult.byStage.new_creation[0].address.toLowerCase(), '0x' + '2'.repeat(40));
   assert.deepEqual(evmCalls[0], ['eth_blockNumber', []]);
   assert.deepEqual(evmCalls[1], ['eth_getLogs', [{
-    address: factory.address, fromBlock: '0x0', toBlock: '0x10', topics: [factory.topic]
+    address: factory.address, fromBlock: '0x0', toBlock: '0xd', topics: [factory.topic]
   }]]);
 });
 
@@ -234,7 +234,7 @@ test('Solana source fails closed instead of advancing past an unavailable transa
     error => error.code === 'CHAIN_SOURCE_INCOMPLETE');
 });
 
-test('EVM source uses a bounded initial lookback instead of requesting genesis archives', async t => {
+test('EVM source trails the reported head so lagging load-balanced RPC nodes can serve the range', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-evm-lookback-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const factory = {
@@ -262,8 +262,9 @@ test('EVM source uses a bounded initial lookback instead of requesting genesis a
   const source = createChainEventSources(config, { fetchImpl }).find(row => row.name === 'evm-bsc-pool');
   await source.read('bsc');
   const lookup = calls.find(row => row.method === 'eth_getLogs');
-  assert.equal(lookup.params[0].fromBlock, '0x385');
-  assert.equal(lookup.params[0].toBlock, '0x3e8');
+  // Reported head is 1000; the source queries a bounded lookback ending three blocks behind it.
+  assert.equal(lookup.params[0].fromBlock, '0x382');
+  assert.equal(lookup.params[0].toBlock, '0x3e5');
 });
 
 test('EVM source advances large backlogs in bounded chunks without skipping blocks', async t => {
