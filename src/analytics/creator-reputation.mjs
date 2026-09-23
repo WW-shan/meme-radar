@@ -19,6 +19,21 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+// Persisted history is a derived cache: one damaged row must never stop the
+// read-only radar from starting. Invalid rows are dropped (which only makes the
+// creator look less known) and reported to the caller.
+export function loadCreatorReputation(rows, { onInvalid = () => {} } = {}) {
+  const reputation = new CreatorReputation();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    try {
+      reputation.recordOnce(row);
+    } catch (error) {
+      onInvalid({ error, row });
+    }
+  }
+  return reputation;
+}
+
 export class CreatorReputation {
   constructor(rows = [], { minimumSamples = 3 } = {}) {
     this.minimumSamples = Math.max(1, Number(minimumSamples) || 3);

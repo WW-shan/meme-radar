@@ -13,7 +13,7 @@ import { LiveDiscovery } from './live-discovery.mjs';
 import { configureWindowsSystemProxy } from './windows-proxy.mjs';
 import { createChainEventSources } from './chain/sources.mjs';
 import { openChainCursorStore } from './chain/cursor-store.mjs';
-import { CreatorReputation } from './analytics/creator-reputation.mjs';
+import { loadCreatorReputation } from './analytics/creator-reputation.mjs';
 import { RiskMemory } from './analytics/risk-memory.mjs';
 import { EventStore } from './evaluation/event-store.mjs';
 
@@ -50,7 +50,14 @@ const chainCursorStore = config.chainEventsEnabled
     onCorrupt: info => console.error(`链上扫描游标文件损坏，已隔离到 ${info.quarantined.join('、') || '(移动失败，请人工检查)'}；链上事件将从有界回看窗口重新开始。`)
   })
   : null;
-const scanner = new Scanner({ gmgn, secondary: new SecondaryValidator(), state, controls, chainSources: createChainEventSources(config, { cursorStore: chainCursorStore }), creatorReputation: new CreatorReputation(state.value.creatorHistory || []), riskMemory: new RiskMemory(state.value.riskMemory || state.value.riskExclusions || {}), eventStore });
+let skippedCreatorHistory = 0;
+const creatorReputation = loadCreatorReputation(state.value.creatorHistory, {
+  onInvalid: () => { skippedCreatorHistory += 1; }
+});
+if (skippedCreatorHistory) {
+  console.error(`创建者历史中有${skippedCreatorHistory}条记录无效，已跳过；其余历史继续使用。`);
+}
+const scanner = new Scanner({ gmgn, secondary: new SecondaryValidator(), state, controls, chainSources: createChainEventSources(config, { cursorStore: chainCursorStore }), creatorReputation, riskMemory: new RiskMemory(state.value.riskMemory || state.value.riskExclusions || {}), eventStore });
 const connection = new GmgnConnection({ gmgn, keyStore, scanner });
 const liveDiscovery = new LiveDiscovery({ gmgn });
 

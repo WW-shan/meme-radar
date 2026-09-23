@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CreatorReputation } from '../src/analytics/creator-reputation.mjs';
+import { CreatorReputation, loadCreatorReputation } from '../src/analytics/creator-reputation.mjs';
 import { createOutcome, recordConfirmedCreatorOutcomes, updateOutcomePath } from '../src/outcomes.mjs';
 
 const creator = '0x' + '1'.repeat(40);
@@ -134,4 +134,20 @@ test('a confirmed rug is recorded even when the H24 return is unmeasured', () =>
   const reputation = new CreatorReputation();
   assert.equal(recordConfirmedCreatorOutcomes(reputation, [row]), 1);
   assert.equal(reputation.snapshot('bsc', creatorAddress, now + 1).priorRugs, 1);
+});
+
+test('persisted creator history skips invalid rows instead of failing startup', () => {
+  const valid = { chain: 'bsc', creator, token: 'T1', observedAt: 5, outcome: 'rug', timeToRugMs: 10 };
+  const invalid = [];
+  const reputation = loadCreatorReputation([
+    valid,
+    { chain: 'bsc', creator: 'not-an-address', token: 'T2', observedAt: 5, outcome: 'rug' },
+    { chain: 'unknown-chain', creator, token: 'T3', observedAt: 5, outcome: 'rug' },
+    null
+  ], { onInvalid: info => invalid.push(info) });
+
+  assert.equal(reputation.serialize().length, 1, 'valid history must survive');
+  assert.equal(invalid.length, 3, 'every rejected row must be reported');
+  assert.equal(reputation.snapshot('bsc', creator, 10).priorRugs, 1);
+  assert.deepEqual(loadCreatorReputation('not-a-list').serialize(), []);
 });

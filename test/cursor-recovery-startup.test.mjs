@@ -58,3 +58,17 @@ test('a corrupt chain cursor file also recovers when chain events are enabled', 
   assert.match(result.stdout, /"status"/, 'chain sources without RPC URLs must report UNCONFIGURED instead of crashing');
   assert.match(result.stdout + result.stderr, /链上扫描游标文件损坏/);
 });
+
+test('a corrupt persisted creator history cannot stop the radar from starting', async t => {
+  const directory = isolatedCopy(t);
+  fs.writeFileSync(path.join(directory, 'state/radar.json'), JSON.stringify({
+    version: 4,
+    activeChain: 'bsc',
+    creatorHistory: [{ chain: 'bsc', creator: 'not-an-address', token: 'X', observedAt: 1, outcome: 'rug' }]
+  }));
+  const result = await runOnce(directory, isolatedEnv());
+
+  assert.ok(!/INVALID_CREATOR_HISTORY/.test(result.stderr), `startup must survive dirty history:\n${result.stderr}`);
+  assert.match(result.stdout, /"status"/, 'the once-cycle must still run and report a status');
+  assert.match(result.stderr, /创建者历史/, 'the skipped rows must be reported');
+});
