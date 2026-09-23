@@ -217,12 +217,16 @@ export function sampleRejected(outcomes, candidate, now) {
   return outcomes;
 }
 
+// Backoff reaches its one-hour ceiling after six attempts; twelve spans ~8 hours.
+const MAX_SAMPLE_ATTEMPTS = 12;
+
 export function dueOutcomeJobs(outcomes, now) {
   return (Array.isArray(outcomes) ? outcomes : [])
     .filter(row => row && typeof row === 'object')
     .flatMap(row => Object.entries(horizons).filter(([key, duration]) =>
     !row.samples?.[key] && now >= row.baselineAt + duration + 60_000
     && now >= (row.sampleRetries?.[key]?.nextAt || 0)
+    && (row.sampleRetries?.[key]?.attempts || 0) < MAX_SAMPLE_ATTEMPTS
   ).map(([key, duration]) => ({ row, key, targetAt: row.baselineAt + duration })))
     .sort((a, b) => (a.row.sampleRetries?.[a.key]?.attempts || 0) - (b.row.sampleRetries?.[b.key]?.attempts || 0) || a.targetAt - b.targetAt);
 }

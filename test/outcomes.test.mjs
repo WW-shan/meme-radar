@@ -124,3 +124,17 @@ test('outcome API separates observed results, path risk, and sample coverage wit
   assert.equal(api.sampleCoverage.passed.m30.completed, 1);
   assert.equal(api.coverage.passed.m30.completed, 1);
 });
+
+test('a horizon whose candle never appears stops retrying instead of polling for the whole retention', async () => {
+  const baselineAt = 1_800_000_000_000;
+  const rows = [{ address, chain: 'bsc', baselineAt, baselinePrice: 1, samples: {} }];
+  let reads = 0;
+  const gmgn = { priceAt: async () => { reads++; return null; } };
+  for (let hour = 1; hour <= 7 * 24; hour++) {
+    await collectOutcomeSamples(rows, gmgn, 'bsc', { now: () => baselineAt + hour * 3600_000, limit: 20 });
+  }
+  assert.ok(rows[0].sampleRetries.m5.attempts <= 12, `m5 attempts ${rows[0].sampleRetries.m5.attempts}`);
+  assert.ok(reads <= 7 * 12);
+  assert.ok(rows[0].path.observations.length <= 1 + 7 * 12);
+  assert.equal(dueOutcomeJobs(rows, baselineAt + 8 * DAY).length, 0);
+});

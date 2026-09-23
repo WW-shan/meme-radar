@@ -188,6 +188,19 @@ test('shadow outcomes sample each requested horizon on time without late backfil
   assert.equal(lateOnly.samples.h24.return, .25);
 });
 
+test('a tracked token without a price records at most one failed read per due horizon', () => {
+  const day = 24 * 60 * 60_000;
+  const baselineAt = 1_800_000_000_000;
+  let outcomes = [{ address: 'token', baselineAt, baselinePrice: 100, initialDecision: 'X_REVIEW', samples: {} }];
+  const unpriced = new Map([['token', { price: 0 }]]);
+  // Scan every minute for three hours: only the m5..h2 windows are due in that span.
+  for (let minute = 1; minute <= 180; minute++) {
+    outcomes = updateOutcomeTracking(outcomes, unpriced, baselineAt + minute * 60_000, 7 * day);
+  }
+  const failed = outcomes[0].path.observations.filter(row => row.failedRead);
+  assert.deepEqual(failed.map(row => row.targetAt - baselineAt), [5, 15, 30, 60, 120].map(minutes => minutes * 60_000));
+});
+
 test('only X_REVIEW creates a shadow cohort while later decisions still update its audit trail', () => {
   const now = 1_800_000_000_000;
   const base = { address: 'token', chain: 'sol', symbol: 'DOG', price: 1, auditedAt: now, deep: { failed: [] } };

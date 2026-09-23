@@ -117,3 +117,19 @@ test('risk exclusion filter tolerates a missing exclusion table', () => {
   const withReasons = applyRiskExclusion(row, { [`bsc:${address}`]: { reasons: ['崩盘'] } }, 'bsc');
   assert.equal(withReasons.decisionReason, '崩盘');
 });
+
+test('a failure later in the same cycle keeps a chart-collapse exclusion that was already persisted', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'community-risk-error-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const state = new RadarState(dir);
+  state.value.activeChain = 'bsc';
+  const gmgn = { keyEpoch: 1, configured: async () => true, discover: async () => [discovery(Date.now())],
+    audit: async () => ({ candles: pump(Date.now()) }) };
+  const creatorReputation = { serialize: () => { throw new Error('late failure'); } };
+  const scanner = new Scanner({ state, gmgn, creatorReputation, settings: { ...config, chain: 'bsc', outcomeReadsPerCycle: 1 } });
+  await scanner.cycle();
+  assert.equal(state.value.status, 'ERROR');
+  const key = 'bsc:' + address;
+  assert.ok(state.value.riskExclusions[key]);
+  assert.ok(new RadarState(dir).value.riskExclusions[key]);
+});

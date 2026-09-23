@@ -320,10 +320,18 @@ export function updateOutcomeTracking(outcomes, discoveredByAddress, now, retent
       };
       if (!(price > 0)) {
         if (!row) return updateOutcomePath(item, []);
-        return updateOutcomePath(item, [{
-          at: now, targetAt: null, lagMs: null, collectedAt: now,
-          price: null, ...metrics, failedRead: true, errorCode: 'INVALID_PRICE'
-        }]);
+        // Record one failed read per due horizon; logging every unpriced cycle
+        // grows the path without bound and churns completed outcome event IDs.
+        const recorded = new Set((item.path?.observations || [])
+          .filter(observation => observation?.failedRead).map(observation => observation.targetAt));
+        const failed = Object.entries(OUTCOME_WINDOWS)
+          .map(([key, windowMs]) => ({ key, targetAt: item.baselineAt + windowMs, lagMs: now - item.baselineAt - windowMs }))
+          .filter(due => !item.samples?.[due.key] && due.lagMs >= 0 && due.lagMs <= graceMs && !recorded.has(due.targetAt))
+          .map(due => ({
+            at: now, targetAt: due.targetAt, lagMs: due.lagMs, collectedAt: now,
+            price: null, ...metrics, failedRead: true, errorCode: 'INVALID_PRICE'
+          }));
+        return updateOutcomePath(item, failed);
       }
       const samples = { ...(item.samples || {}) };
       const observations = [];
@@ -1167,7 +1175,10 @@ export class Scanner {
         lastAttemptAt: startedAt,
         generatedAt: now,
         nextCycleAt: Math.max(now, startedAt + settings.scanIntervalMs),
-        lastCycleMs: now - startedAt
+        lastCycleMs: now - startedAt,
+        // `prior` predates this cycle; keep exclusions already persisted mid-cycle.
+        riskExclusions,
+        riskMemory: riskMemory.serialize()
       };
       next.events = addEvent(prior.events, rateLimited ? 'RATE_LIMITED' : 'ERROR', next.error, chain);
       next.chainStates = { ...(prior.chainStates || {}), [chain]: scopeSnapshot(next) };
