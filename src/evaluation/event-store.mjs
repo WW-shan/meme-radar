@@ -10,6 +10,13 @@ function stable(value) {
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}`;
 }
 
+// A crash or full disk during appendFileSync leaves an unterminated final line.
+// Every complete line ends with "\n", so such a tail is a torn write, not data.
+function tornTailStart(content) {
+  if (!content || content.endsWith('\n')) return -1;
+  return content.lastIndexOf('\n') + 1;
+}
+
 function invalidEvent() {
   return Object.assign(new Error('invalid event'), { code: 'INVALID_EVENT' });
 }
@@ -49,8 +56,18 @@ export class EventStore {
       return empty;
     }
     if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached;
+    let content = fs.readFileSync(file, 'utf8');
+    const torn = tornTailStart(content);
+    if (torn >= 0) {
+      content = content.slice(0, torn);
+      fs.truncateSync(file, Buffer.byteLength(content));
+    }
+    return this.indexContent(file, content);
+  }
+
+  indexContent(file, content) {
     const ids = new Set();
-    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const lines = content.split('\n');
     for (let index = 0; index < lines.length; index++) {
       if (!lines[index].trim()) continue;
       let parsed;
@@ -60,6 +77,7 @@ export class EventStore {
       }
       if (parsed?.eventId) ids.add(String(parsed.eventId));
     }
+    const stat = fs.statSync(file);
     const entry = { ids, size: stat.size, mtimeMs: stat.mtimeMs };
     this.index.set(file, entry);
     return entry;
@@ -104,7 +122,9 @@ export class EventStore {
     const rows = [];
     for (const name of fs.readdirSync(this.directory).filter(name => name.endsWith('.ndjson')).sort()) {
       const file = path.join(this.directory, name);
-      const lines = fs.readFileSync(file, 'utf8').split('\n');
+      const content = fs.readFileSync(file, 'utf8');
+      const torn = tornTailStart(content);
+      const lines = (torn >= 0 ? content.slice(0, torn) : content).split('\n');
       for (let index = 0; index < lines.length; index++) {
         const line = lines[index];
         if (!line.trim()) continue;

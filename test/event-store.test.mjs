@@ -82,6 +82,19 @@ test('event store fails closed on a corrupt line', async t => {
   await assert.rejects(store.read(), error => error.code === 'EVENT_STORE_CORRUPT');
 });
 
+test('event store recovers from a write torn by a crash instead of blocking every later append', async t => {
+  const dir = temporary(t);
+  const first = new EventStore(dir);
+  const kept = await first.append(event());
+  const file = first.file(event().observedAt);
+  fs.appendFileSync(file, '{"source":"gmgn","chain":"so');
+  assert.deepEqual((await new EventStore(dir).read()).map(row => row.eventId), [kept.eventId]);
+  const restarted = new EventStore(dir);
+  const added = await restarted.append(event({ observedAt: event().observedAt + 1 }));
+  assert.deepEqual((await restarted.read()).map(row => row.eventId), [kept.eventId, added.eventId]);
+  assert.ok(fs.readFileSync(file, 'utf8').endsWith('\n'));
+});
+
 test('state migrates v2 to v4 without dropping existing data', t => {
   const dir = temporary(t);
   fs.writeFileSync(path.join(dir, 'radar.json'), JSON.stringify({ version: 2, scanCount: 7, candidates: [{ address: 'A' }] }));
