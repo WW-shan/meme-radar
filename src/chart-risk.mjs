@@ -4,9 +4,12 @@ export const CHART_RISK_VERSION = 1;
 export function applyRiskExclusion(row, exclusions = {}, chain = row?.chain) {
   if (!row || typeof row !== 'object') return row;
   const address = String(row.address || '').trim();
-  const held = exclusions[`${chain}:${chain === 'sol' ? address : address.toLowerCase()}`];
+  const table = exclusions && typeof exclusions === 'object' ? exclusions : {};
+  const held = table[`${chain}:${chain === 'sol' ? address : address.toLowerCase()}`];
   if (!held) return row;
-  return { ...row, status: 'HARD_REJECT', decisionReason: held.reasons.join('；'),
+  const reasons = Array.isArray(held.reasons) ? held.reasons : [];
+  const decisionReason = reasons.length ? reasons.join('；') : String(held.code || '已记录的风险排除');
+  return { ...row, status: 'HARD_REJECT', decisionReason,
     deep: { ...row.deep, chainPass: false, checks: { ...row.deep?.checks, chartRisk: false },
       failed: [...new Set([...(row.deep?.failed || []), 'chartRisk'])],
       chartRisk: { ...held, status: 'REJECT', pass: false } } };

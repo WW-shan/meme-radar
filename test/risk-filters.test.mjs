@@ -103,3 +103,17 @@ test('risk memory survives restart, old snapshots and chain switching without an
   assert.equal(applyRiskExclusion({ address: address.toUpperCase(), status: 'X_REVIEW' }, state.value.riskExclusions, 'bsc').status, 'HARD_REJECT');
   assert.equal(applyRiskExclusion({ address, status: 'X_REVIEW' }, state.value.riskExclusions, 'arc').status, 'X_REVIEW');
 });
+
+test('risk exclusion filter tolerates a missing exclusion table', () => {
+  const row = { address, chain: 'bsc', status: 'X_REVIEW' };
+  assert.equal(applyRiskExclusion(row, null, 'bsc').status, 'X_REVIEW');
+  assert.equal(applyRiskExclusion(row, undefined, 'bsc').status, 'X_REVIEW');
+  assert.equal(applyRiskExclusion(row, 'not-a-table', 'bsc').status, 'X_REVIEW');
+  assert.equal(applyRiskExclusion(null, null, 'bsc'), null);
+
+  const legacy = applyRiskExclusion(row, { [`bsc:${address}`]: { code: 'CHART_COLLAPSE' } }, 'bsc');
+  assert.equal(legacy.status, 'HARD_REJECT', 'a legacy exclusion without reasons must still exclude');
+  assert.equal(legacy.decisionReason, 'CHART_COLLAPSE');
+  const withReasons = applyRiskExclusion(row, { [`bsc:${address}`]: { reasons: ['崩盘'] } }, 'bsc');
+  assert.equal(withReasons.decisionReason, '崩盘');
+});
