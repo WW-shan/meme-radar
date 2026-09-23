@@ -63,6 +63,10 @@
 4. 创建后复制 API Key，回到雷达粘贴并点击 **✓**。验证成功后才会保存到本机并开始扫描。
 5. 每次新建 API Key 都必须重新完成这套 Agent 公钥绑定；不能复用另一个 Key 的配对步骤。
 
+> **创建前的账号门槛**：GMGN 目前要求账号满足最低资产条件才会签发 API Key。资产不足时创建页面会返回 `key-service error: INSUFFICIENT_ASSETS`，雷达侧无法绕过（这是 GMGN 服务端的业务规则，不是本机配置问题）。2026-09-23 向 GMGN 支持确认的口径是**需充值 100 美元**；门槛可能随地区与时间变化，以 GMGN 页面和官方回复为准。
+>
+> 没有 GMGN Key 也可以运行：设置 `RADAR_CHAIN_EVENTS=1` 并提供 RPC 与 `RADAR_EVM_FACTORIES` 后，雷达会用直接链上新建池/迁移事件做发现（覆盖范围小于 GMGN，且不含 GMGN 热度榜与标签）。`npm run test:live -- --chains sol,bsc,eth --blocks 1000` 可以单独验证这些 RPC 通路。
+
 以后继续双击同一个启动入口即可，Key 保存在本机，重启后不用重复填写。扫描到的代币可点击 AVE、官网或 X 链接人工查看。若代理/VPN环境下 GMGN 连接超时，请先让浏览器能够访问 GMGN，并开启代理软件的“系统代理”，再完全关闭并重启雷达。
 
 ### 使用 AVE
