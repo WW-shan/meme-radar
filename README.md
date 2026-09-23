@@ -24,10 +24,10 @@
 
 ## 下载
 
-- [Windows x64 一键便携版](https://github.com/nhovongoc0-max/meme-radar/releases/download/v0.1.8/MemeRadar-OpenSource-Windows-x64-0.1.8.zip)
-- [macOS 版](https://github.com/nhovongoc0-max/meme-radar/releases/download/v0.1.8/MemeRadar-OpenSource-macOS-0.1.8.zip)
+- [Windows x64 一键便携版](https://github.com/WW-shan/meme-radar/releases/download/v0.1.8/MemeRadar-OpenSource-Windows-x64-0.1.8.zip)
+- [macOS 版](https://github.com/WW-shan/meme-radar/releases/download/v0.1.8/MemeRadar-OpenSource-macOS-0.1.8.zip)
 
-也可以在 [Releases](https://github.com/nhovongoc0-max/meme-radar/releases) 页面查看版本说明与文件校验值。
+也可以在 [Releases](https://github.com/WW-shan/meme-radar/releases) 页面查看版本说明与文件校验值。
 
 ## 安全边界
 
