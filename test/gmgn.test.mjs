@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { GmgnClient, discoveryRequestArgs, gmgnChildEnvironment, normalizeList, translateGmgnError } from '../src/gmgn.mjs';
 
 test('normalizes nested GMGN list shapes without guessing token fields', () => {
@@ -34,6 +35,7 @@ test('GMGN child environment keeps network proxy settings without forwarding unr
   assert.equal(result.no_proxy, '127.0.0.1');
   assert.equal(result.GMGN_PROFILE, undefined);
   assert.equal(result.UNRELATED_SECRET, undefined);
+  assert.equal(gmgnChildEnvironment({ PATH: '/bin', GMGN_API_KEY: `gmgn_${'c'.repeat(32)}` }).GMGN_API_KEY, undefined);
   assert.equal(gmgnChildEnvironment({ GMGN_DEBUG: '1', GMGN_PRIVATE_KEY: 'private', NODE_OPTIONS: '--inspect' }).GMGN_PRIVATE_KEY, undefined);
   assert.equal(gmgnChildEnvironment({ GMGN_DEBUG: '1' }).GMGN_DEBUG, undefined);
 });
@@ -48,4 +50,15 @@ test('stored GMGN key is injected through the child environment and never comman
   assert.equal(client.childEnvironment().GMGN_API_KEY, key);
   assert.equal(await client.configured(), true);
   assert.doesNotMatch(JSON.stringify(discoveryRequestArgs('bsc')), /gmgn_[A-Za-z0-9_-]+/);
+});
+
+test('GMGN child timeouts map to a retryable timeout error', async () => {
+  const client = new GmgnClient({
+    workerPath: fileURLToPath(new URL('./fixtures/hanging-worker.mjs', import.meta.url)),
+    timeoutMs: 50,
+    minRequestGapMs: 0,
+    apiKeyProvider: () => `gmgn_${'a'.repeat(32)}`,
+    legacyKeyProvider: () => ''
+  });
+  await assert.rejects(client.run(['market', 'trending', '--chain', 'sol', '--raw']), { code: 'GMGN_TIMEOUT' });
 });

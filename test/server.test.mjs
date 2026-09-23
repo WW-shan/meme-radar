@@ -367,8 +367,21 @@ test('connection status exposes only readiness and saving alone cannot be report
 
 
 test('public status and voice snapshots tolerate malformed legacy collections', () => {
-  const output = toPublicStatus({ activeChain: 'bsc', candidates: [null], coverage: null });
+  const output = toPublicStatus({
+    activeChain: 'bsc',
+    candidates: [null],
+    rejected: [null, { address: '0x1', reasons: [null, 'risk'] }],
+    events: [null, { type: 'AUTH' }],
+    sourceHealth: null,
+    outcomeSummary: null,
+    coverage: null
+  });
   assert.deepEqual(output.candidates, []);
+  assert.deepEqual(output.rejected.map(row => row.address), ['0x1']);
+  assert.deepEqual(output.rejected[0].reasons, ['risk']);
+  assert.deepEqual(output.events.map(event => event.type), ['AUTH']);
+  assert.deepEqual(output.sourceHealth, {});
+  assert.equal(output.outcomeSummary.calibrationStatus, 'INSUFFICIENT');
   assert.deepEqual(output.coverage, {});
   const voice = voiceSnapshot({ activeChain: 'bsc', chainStates: null, riskExclusions: null }, null);
   assert.deepEqual(voice.chains, {});

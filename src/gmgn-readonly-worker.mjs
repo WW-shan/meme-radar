@@ -1,12 +1,14 @@
 import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import { normalizeGmgnApiKey } from './gmgn-key-store.mjs';
+import { GMGN_SIGNAL_CHAINS } from './gmgn-adapter.mjs';
 
 const CHAINS = new Set(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']);
 const RANGE_OPTIONS = ['min-created', 'max-created', 'min-marketcap', 'max-marketcap', 'min-liquidity'];
 const READS = Object.freeze({ info: 'getTokenInfo', security: 'getTokenSecurity', pool: 'getTokenPoolInfo' });
 const TRENCH_STAGES = new Set(['new_creation', 'near_completion', 'completed']);
 const SIGNAL_TYPES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21]);
+const SIGNAL_CHAINS = new Set(GMGN_SIGNAL_CHAINS);
 
 function parseOptions(args, allowed) {
   const options = {};
@@ -92,7 +94,7 @@ export async function executeReadOnly(client, args) {
     const opts = parseOptions(rest, ['chain', 'signal-type', 'limit']);
     const values = String(opts['signal-type'] || '').split(',').map(value => Number(value.trim()));
     const limit = Number(opts.limit || 50);
-    if (!values.length || values.some(value => !Number.isInteger(value) || !SIGNAL_TYPES.has(value))
+    if (!SIGNAL_CHAINS.has(opts.chain) || !values.length || values.some(value => !Number.isInteger(value) || !SIGNAL_TYPES.has(value))
       || new Set(values).size !== values.length || values.length > 50
       || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('Invalid signal request');
     return client.getTokenSignalV2(opts.chain, [{ signal_type: values }]);

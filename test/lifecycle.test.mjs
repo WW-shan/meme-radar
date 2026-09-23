@@ -40,6 +40,18 @@ test('lifecycle keys isolate chains and signal is not a lifecycle state', () => 
   assert.throws(() => tracker.observe({ chain: 'sol', address: 'A', stage: 'signal', observedAt: 3 }), error => error.code === 'SIGNAL_NOT_LIFECYCLE');
 });
 
+test('lifecycle treats EVM addresses case-insensitively while preserving Solana case', () => {
+  const tracker = new LifecycleTracker();
+  tracker.observe({ chain: 'bsc', address: '0xAbCd', stage: 'new_creation', observedAt: 1 });
+  tracker.observe({ chain: 'bsc', address: '0xabcd', stage: 'near_completion', observedAt: 2 });
+  assert.equal(tracker.snapshot().length, 1);
+  assert.deepEqual(tracker.get('bsc', '0xABCD').history.map(row => row.stage), ['new_creation', 'near_completion']);
+
+  tracker.observe({ chain: 'sol', address: 'AbCd', stage: 'completed', observedAt: 1 });
+  tracker.observe({ chain: 'sol', address: 'abcd', stage: 'completed', observedAt: 1 });
+  assert.equal(tracker.snapshot().length, 3);
+});
+
 test('lifecycle snapshot restores without sharing mutable history', () => {
   const first = new LifecycleTracker();
   first.observe({ chain: 'sol', address: 'A', stage: 'near_completion', observedAt: 4 });

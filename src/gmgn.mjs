@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { legacyGmgnApiKey, normalizeGmgnApiKey } from './gmgn-key-store.mjs';
-import { GmgnAdapter } from './gmgn-adapter.mjs';
+import { GMGN_SIGNAL_CHAINS, GmgnAdapter } from './gmgn-adapter.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,7 +14,7 @@ export function gmgnChildEnvironment(source = process.env, apiKey = '', privateK
     'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'
   ];
   const env = Object.fromEntries(allowed.filter(key => source[key]).map(key => [key, source[key]]));
-  const explicitKey = normalizeGmgnApiKey(apiKey || source.GMGN_API_KEY);
+  const explicitKey = normalizeGmgnApiKey(apiKey);
   if (explicitKey) env.GMGN_API_KEY = explicitKey;
   if (typeof privateKey === 'string' && /^-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----\s*$/.test(privateKey)) {
     env.GMGN_PRIVATE_KEY = privateKey;
@@ -65,8 +65,10 @@ function retryAfterMs(message) {
 }
 
 export function requestWeight(args) {
-  return ({ holders: 5, traders: 5, trenches: 3, kline: 2 })[args[1]] || 1;
+  return ({ holders: 5, traders: 5, trenches: 3, signal: 3, kline: 2 })[args[1]] || 1;
 }
+
+const SIGNAL_CHAINS = new Set(GMGN_SIGNAL_CHAINS);
 
 export function tokenInfoPrice(info) {
   const value = info?.price?.price ?? info?.price ?? info?.price_usd;
@@ -81,6 +83,7 @@ export function translateGmgnError(error) {
   try { const parsed = JSON.parse(error?.stderr); workerCode = parsed.code || ''; workerRetryMs = Number(parsed.retryAfterMs) || 0; } catch {}
   const raw = [workerCode, error?.code, error?.status ? `HTTP ${error.status}` : '',
     [401, 403, 429].includes(Number(error?.apiCode)) ? `HTTP ${error.apiCode}` : '',
+    error?.killed ? 'killed' : '', error?.signal || '',
     error?.stderr || error?.message || error || ''].join(' ');
   let message = '未知错误';
   let code = 'GMGN_REQUEST_FAILED';
@@ -292,10 +295,15 @@ export class GmgnClient {
 
   async signals(chain = 'robinhood', signalTypes = [], limit = 50) {
     const allowed = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21]);
-    if (!Array.isArray(signalTypes) || !signalTypes.length || signalTypes.some(type => !allowed.has(type))
+    if (!SIGNAL_CHAINS.has(chain) || !Array.isArray(signalTypes) || !signalTypes.length || signalTypes.some(type => !allowed.has(type))
       || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('Invalid signal request');
     const raw = await this.run(['market', 'signal', '--chain', chain, '--signal-type', signalTypes.join(','), '--limit', String(limit), '--raw']);
-    return normalizeList(raw, ['list', 'rank', 'tokens']);
+    return normalizeList(raw, ['list', 'rank', 'tokens']).map(row => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+      const data = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? row.data : {};
+      const address = row.address || row.token_address || data.address || '';
+      return { ...data, ...row, address };
+    });
   }
 
   async discover(chain = 'robinhood') {

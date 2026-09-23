@@ -1,7 +1,9 @@
 export const LIFECYCLE_ORDER = Object.freeze({ new_creation: 0, near_completion: 1, completed: 2, migrated: 3 });
 
 function key(chain, address) {
-  return `${chain}:${String(address || '').trim()}`;
+  const normalizedChain = String(chain || '').toLowerCase();
+  const value = String(address || '').trim();
+  return `${normalizedChain}:${normalizedChain === 'sol' ? value : value.toLowerCase()}`;
 }
 
 export class LifecycleTracker {

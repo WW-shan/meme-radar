@@ -56,3 +56,12 @@ test('scanner keeps risk-radar on completed discovery and enables staged sources
   const earlySources = scanner.discoverySources();
   assert.deepEqual(earlySources.map(source => source.name), ['gmgn-completed', 'gmgn-new', 'gmgn-near', 'gmgn-signals']);
 });
+
+test('early discovery skips the GMGN signal source on chains it does not support', () => {
+  const scanner = Object.create(Scanner.prototype);
+  scanner.gmgn = { discover: async () => [], discoverStage: async () => [], signals: async () => [] };
+  scanner.config = { productMode: 'early-discovery' };
+  assert.deepEqual(scanner.discoverySources('base').map(source => source.name), ['gmgn-completed', 'gmgn-new', 'gmgn-near']);
+  assert.deepEqual(scanner.discoverySources('eth').map(source => source.name), ['gmgn-completed', 'gmgn-new', 'gmgn-near']);
+  assert.deepEqual(scanner.discoverySources('sol').map(source => source.name), ['gmgn-completed', 'gmgn-new', 'gmgn-near', 'gmgn-signals']);
+});

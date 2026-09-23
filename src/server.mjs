@@ -321,6 +321,7 @@ function publicCandidate(row = {}) {
 }
 
 function publicRejected(row = {}) {
+  if (!row || typeof row !== 'object') row = {};
   return {
     address: text(row.address, 80),
     symbol: text(row.symbol || '?', 30),
@@ -331,11 +332,12 @@ function publicRejected(row = {}) {
     status: text(row.status, 32),
     stage: text(row.stage, 32),
     nextCheckAt: finite(row.nextCheckAt),
-    reasons: Array.isArray(row.reasons) ? row.reasons.slice(0, 24).map(value => text(value, 80)) : []
+    reasons: Array.isArray(row.reasons) ? row.reasons.slice(0, 24).map(value => text(value, 80)).filter(Boolean) : []
   };
 }
 
 function publicEvent(event = {}) {
+  if (!event || typeof event !== 'object') event = {};
   const type = text(event.type, 32);
   const fixedMessage = type === 'ERROR'
     ? '数据请求暂时失败，系统会在下一轮重试。'
@@ -386,6 +388,7 @@ function secondaryEndpointHealth(row = {}) {
 }
 
 function publicSourceHealth(source = {}) {
+  if (!source || typeof source !== 'object') source = {};
   const result = {};
   if (source.discovery && typeof source.discovery === 'object') {
     result.discovery = {
@@ -555,6 +558,7 @@ function publicCalibrationBins(source) {
 }
 
 function publicOutcomeSummary(source = {}) {
+  if (!source || typeof source !== 'object') source = {};
   const sampleCoverage = publicOutcomeCoverage(source.sampleCoverage || source.coverage || {});
   return {
     ...countSummary(source, [
@@ -625,8 +629,8 @@ export function toPublicStatus(source = {}) {
       .filter(row => row && typeof row === 'object')
       .slice(0, 100)
       .map(row => publicCandidate(applyRiskExclusion(row, source.riskExclusions, activeChain))),
-    rejected: Array.isArray(source.rejected) ? source.rejected.slice(0, 100).map(publicRejected) : [],
-    events: Array.isArray(source.events) ? source.events.slice(0, 100).map(publicEvent) : [],
+    rejected: Array.isArray(source.rejected) ? source.rejected.filter(row => row && typeof row === 'object').slice(0, 100).map(publicRejected) : [],
+    events: Array.isArray(source.events) ? source.events.filter(event => event && typeof event === 'object').slice(0, 100).map(publicEvent) : [],
     xCapability: {
       available: source.xCapability?.available === true,
       backend: text(source.xCapability?.backend, 48),

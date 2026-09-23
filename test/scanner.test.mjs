@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { config } from '../src/config.mjs';
+import { RadarState } from '../src/state.mjs';
 import {
   Scanner, classifyDeepResult, mergeSecondaryClassification, selectAuditQueue, summarizeOutcomes,
   twitterHandle, updateOutcomeTracking, upsertOutcome
@@ -18,6 +23,54 @@ test('manual rescan requests run immediately or queue behind the active cycle', 
   assert.deepEqual(scanner.requestCycle(), { queued: false });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(cycles, 1);
+});
+
+test('scanner cycle tolerates malformed persisted candidate rows', async () => {
+  const state = {
+    value: {
+      activeChain: 'bsc', supportedChains: ['bsc'], candidates: [null, 'bad-row'],
+      rejected: [], auditQueue: [], outcomes: [], events: [], scanCount: 0
+    },
+    save(next) { this.value = next; }
+  };
+  const gmgn = {
+    keyEpoch: 0, nextAllowedAt: 0, disabled: false,
+    metrics: { requests: 0, cacheHits: 0, rateLimits: 0 },
+    configured: async () => true,
+    discover: async () => []
+  };
+  const scanner = new Scanner({
+    gmgn, state, chainSources: [],
+    settings: { ...config, chain: 'bsc', maxDeepAuditsPerCycle: 1, auditCycleBudgetMs: 1_000 }
+  });
+  await assert.doesNotReject(() => scanner.cycle());
+  assert.equal(state.value.status, 'RUNNING');
+});
+
+test('state migration normalizes malformed top-level and per-chain collections', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-state-normalize-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'radar.json'), JSON.stringify({
+    candidates: [null, 'bad'],
+    rejected: [null, 'bad'],
+    auditQueue: [null, 'bad'],
+    outcomes: [null, 'bad'],
+    events: [null, 'bad'],
+    lifecycle: [null, 'bad'],
+    chainStates: {
+      bsc: { candidates: [null, 'bad'], rejected: [null], auditQueue: [null], outcomes: [null], events: [null], lifecycle: [null] },
+      sol: null,
+      eth: 'bad'
+    }
+  }));
+  const state = new RadarState(dir);
+  for (const key of ['candidates', 'rejected', 'auditQueue', 'outcomes', 'events', 'lifecycle']) {
+    assert.deepEqual(state.value[key], [], key);
+  }
+  assert.deepEqual(state.value.chainStates.bsc.candidates, []);
+  assert.deepEqual(state.value.chainStates.bsc.outcomes, []);
+  assert.equal(state.value.chainStates.sol, undefined);
+  assert.equal(state.value.chainStates.eth, undefined);
 });
 
 test('X链接只接受真实用户名并拒绝站内功能路径', () => {

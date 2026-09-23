@@ -58,6 +58,20 @@ test('GmgnClient exposes lifecycle and signal helpers without trading calls', as
   await assert.rejects(client.signals('sol', [14]), /Invalid signal request/);
 });
 
+test('GmgnClient normalizes the real signal envelope to scanner token rows', async () => {
+  const client = new GmgnClient();
+  client.run = async () => [{
+    id: 'signal-1', token_address: 'Mint111', signal_type: 12, market_cap: 123,
+    data: { chain: 'sol', address: 'Mint111', symbol: 'TEST', name: 'Test Token', market_cap: 120 }
+  }];
+  const rows = await client.signals('sol', [12]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].address, 'Mint111');
+  assert.equal(rows[0].chain, 'sol');
+  assert.equal(rows[0].symbol, 'TEST');
+  assert.equal(rows[0].signal_type, 12);
+});
+
 test('migrated audits use the full endpoint set and are not marked as early exits', async () => {
   const client = new GmgnClient();
   const calls = [];

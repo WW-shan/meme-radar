@@ -44,6 +44,35 @@ export function tokenKey(chain, address) {
   return `${chain}:${chain === 'sol' ? value : value.toLowerCase()}`;
 }
 
+function validAnnotationAddress(chain, address) {
+  return chain === 'sol'
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)
+    : /^0x[0-9a-f]{40}$/i.test(address);
+}
+
+function sanitizeNote(note) {
+  return note.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+}
+
+function normalizeAnnotations(raw, chains) {
+  const annotations = {};
+  for (const value of Object.values(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const chain = String(value.chain || '').toLowerCase();
+    const address = String(value.address || '').trim();
+    if (!chains.includes(chain) || !validAnnotationAddress(chain, address)
+      || typeof value.favorite !== 'boolean' || typeof value.note !== 'string' || value.note.length > 500) continue;
+    annotations[tokenKey(chain, address)] = {
+      chain,
+      address,
+      favorite: value.favorite,
+      note: sanitizeNote(value.note),
+      updatedAt: Number.isFinite(Number(value.updatedAt)) ? Number(value.updatedAt) : 0
+    };
+  }
+  return annotations;
+}
+
 export class RadarControls {
   constructor(dir, chains, initialChain) {
     this.file = path.join(dir, 'preferences.json');
@@ -51,12 +80,9 @@ export class RadarControls {
     const defaults = { enabledChains: [initialChain], annotations: {} };
     const loaded = readJsonWithBackup(this.file, defaults).value;
     const enabledChains = Array.isArray(loaded.enabledChains) ? loaded.enabledChains : defaults.enabledChains;
-    const annotations = loaded.annotations && typeof loaded.annotations === 'object' && !Array.isArray(loaded.annotations)
-      ? loaded.annotations
-      : {};
     this.value = {
       enabledChains: [...new Set(enabledChains)].filter(x => chains.includes(x)).slice(0, 3),
-      annotations
+      annotations: normalizeAnnotations(loaded.annotations, chains)
     };
     if (!this.value.enabledChains.length) this.value.enabledChains = [initialChain];
   }
@@ -70,7 +96,7 @@ export class RadarControls {
   }
   annotate({ chain, address, favorite, note }) {
     if (!this.chains.includes(chain) || typeof address !== 'string'
-      || !(chain === 'sol' ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/ : /^0x[0-9a-f]{40}$/i).test(address)
+      || !validAnnotationAddress(chain, address)
       || typeof favorite !== 'boolean' || typeof note !== 'string' || note.length > 500) {
       throw Object.assign(new Error('invalid_annotation'), { statusCode: 400 });
     }
@@ -79,7 +105,7 @@ export class RadarControls {
       throw Object.assign(new Error('favorite_limit'), { statusCode: 400 });
     }
     if (!this.value.annotations[key] && Object.keys(this.value.annotations).length >= 500) throw Object.assign(new Error('annotation_limit'), { statusCode: 400 });
-    this.value.annotations[key] = { chain, address, favorite, note: note.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ''), updatedAt: Date.now() };
+    this.value.annotations[key] = { chain, address, favorite, note: sanitizeNote(note), updatedAt: Date.now() };
     if (!favorite && !note.trim()) delete this.value.annotations[key];
     atomicJson(this.file, this.value);
     return { saved: true };

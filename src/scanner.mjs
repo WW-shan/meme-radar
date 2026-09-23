@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { discoveryScreen, deepScreen, marketCap, createdAt } from './scoring.mjs';
 import { socialGate } from './social.mjs';
 import { tokenInfoPrice } from './gmgn.mjs';
+import { GMGN_SIGNAL_CHAINS } from './gmgn-adapter.mjs';
 import { collectOutcomeSamples, createOutcome, dueOutcomeJobs, outcomeCoverage, recordConfirmedCreatorOutcomes, sampleRejected, updateOutcomePath } from './outcomes.mjs';
 import { tokenKey } from './local-store.mjs';
 import { DISCOVERY_SOURCE, DiscoveryOrchestrator } from './discovery/orchestrator.mjs';
@@ -543,17 +544,21 @@ export class Scanner {
     this.state.value.supportedChains = this.supportedChains;
   }
 
-  discoverySources() {
+  discoverySources(chain = '') {
     const sources = [{
       name: 'gmgn-completed',
       read: async chain => ({ stage: 'completed', rows: await this.gmgn.discover(chain) })
     }];
     const capabilities = productCapabilities(this.config.productMode || 'risk-radar');
-    if (capabilities.earlyDiscovery) sources.push(
-      { name: 'gmgn-new', read: async chain => ({ stage: 'new_creation', rows: await this.gmgn.discoverStage(chain, 'new_creation', 80) }) },
-      { name: 'gmgn-near', read: async chain => ({ stage: 'near_completion', rows: await this.gmgn.discoverStage(chain, 'near_completion', 80) }) },
-      { name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) }
-    );
+    if (capabilities.earlyDiscovery) {
+      sources.push(
+        { name: 'gmgn-new', read: async chain => ({ stage: 'new_creation', rows: await this.gmgn.discoverStage(chain, 'new_creation', 80) }) },
+        { name: 'gmgn-near', read: async chain => ({ stage: 'near_completion', rows: await this.gmgn.discoverStage(chain, 'near_completion', 80) }) }
+      );
+      if (!chain || GMGN_SIGNAL_CHAINS.includes(chain)) {
+        sources.push({ name: 'gmgn-signals', read: async chain => ({ stage: 'signal', rows: await this.gmgn.signals(chain, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21], 50) }) });
+      }
+    }
     sources.push(...(this.chainSources || []));
     return sources;
   }
@@ -754,7 +759,7 @@ export class Scanner {
         return;
       }
 
-      const discoveryResult = await new DiscoveryOrchestrator(this.discoverySources()).run(chain);
+      const discoveryResult = await new DiscoveryOrchestrator(this.discoverySources(chain)).run(chain);
       if (this.gmgn.keyEpoch !== keyEpoch) return;
       await this.persistDiscoveryEvents(discoveryResult, chain, startedAt);
       this.lastDiscoveryStages = discoveryResult.byStage;
@@ -794,8 +799,8 @@ export class Scanner {
       const prequalified = screened.filter(item => item.screen.pass).sort((a, b) =>
         Number(b.screen.priorityBand) - Number(a.screen.priorityBand) || b.screen.score - a.screen.score
       );
-      const monitoring = new Map((prior.candidates || []).filter(row => row.status === 'X_REVIEW'
-        || this.controls?.value.annotations[tokenKey(chain, row.address)]?.favorite).map(row => [addressKey(row.address), row]));
+      const monitoring = new Map((prior.candidates || []).filter(row => row?.status === 'X_REVIEW'
+        || this.controls?.value.annotations[tokenKey(chain, row?.address)]?.favorite).map(row => [addressKey(row.address), row]));
       for (const annotation of Object.values(this.controls?.value.annotations || {})) {
         if (annotation.chain === chain && annotation.favorite && !monitoring.has(addressKey(annotation.address))) monitoring.set(addressKey(annotation.address), annotation);
       }

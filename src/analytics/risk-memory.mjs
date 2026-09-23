@@ -4,9 +4,11 @@ function memoryKey(chain, address) {
 }
 
 function normalizeRow(row = {}, fallbackKey = '') {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const [fallbackChain, ...fallbackAddress] = String(fallbackKey).split(':');
   const chain = String(row.chain || fallbackChain || '').toLowerCase();
   const address = String(row.address || fallbackAddress.join(':') || '').trim();
+  if (!chain || !address) return null;
   const at = Number(row.at) || 0;
   const expiresAt = Number(row.expiresAt) || 0;
   const permanent = row.permanent === true || expiresAt === 0;
@@ -27,13 +29,15 @@ function normalizeRow(row = {}, fallbackKey = '') {
 
 export class RiskMemory {
   constructor(rows = []) {
-    const source = Array.isArray(rows) ? rows : Object.entries(rows).map(([key, value]) => normalizeRow(value, key));
-    this.rows = source.map(row => normalizeRow(row));
+    const source = Array.isArray(rows) ? rows
+      : rows && typeof rows === 'object' ? Object.entries(rows).map(([key, value]) => normalizeRow(value, key))
+        : [];
+    this.rows = source.map(row => normalizeRow(row)).filter(Boolean);
   }
 
   remember(row = {}) {
     const normalized = normalizeRow(row);
-    if (!normalized.chain || !normalized.address) throw Object.assign(new Error('invalid risk memory record'), { code: 'INVALID_RISK_MEMORY' });
+    if (!normalized) throw Object.assign(new Error('invalid risk memory record'), { code: 'INVALID_RISK_MEMORY' });
     const index = this.rows.findIndex(existing => existing.key === normalized.key && existing.code === normalized.code);
     if (index >= 0) this.rows[index] = { ...this.rows[index], ...normalized };
     else this.rows.push(normalized);
@@ -50,7 +54,28 @@ export class RiskMemory {
   }
 
   toObject(now = Date.now()) {
-    return Object.fromEntries(this.snapshot(now).map(row => [row.key, { ...row }]));
+    const grouped = new Map();
+    for (const row of this.snapshot(now)) {
+      const previous = grouped.get(row.key);
+      if (!previous) {
+        grouped.set(row.key, {
+          ...row,
+          codes: [row.code].filter(Boolean),
+          reasons: Array.isArray(row.reasons) ? [...row.reasons] : []
+        });
+        continue;
+      }
+      grouped.set(row.key, {
+        ...previous,
+        ...row,
+        codes: [...new Set([...(previous.codes || []), row.code].filter(Boolean))],
+        reasons: [...new Set([...(previous.reasons || []), ...(Array.isArray(row.reasons) ? row.reasons : [])].filter(Boolean))],
+        permanent: previous.permanent || row.permanent,
+        confidence: Math.max(Number(previous.confidence) || 0, Number(row.confidence) || 0),
+        expiresAt: Math.max(Number(previous.expiresAt) || 0, Number(row.expiresAt) || 0)
+      });
+    }
+    return Object.fromEntries(grouped);
   }
 
   serialize() {

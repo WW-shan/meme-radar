@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectOutcomeSamples, createOutcome, updateOutcomePath } from '../src/outcomes.mjs';
+import {
+  collectOutcomeSamples, confirmedCreatorOutcome, createOutcome, dueOutcomeJobs,
+  outcomeCoverage, recordConfirmedCreatorOutcomes, updateOutcomePath
+} from '../src/outcomes.mjs';
 import { summarizeOutcomes, updateOutcomeTracking } from '../src/scanner.mjs';
 import { toPublicStatus } from '../src/server.mjs';
+import { CreatorReputation } from '../src/analytics/creator-reputation.mjs';
 
 const DAY = 24 * 60 * 60_000;
 const address = '0x' + '2'.repeat(40);
@@ -78,6 +82,23 @@ test('late current prices are not backfilled into expired target windows and ret
 
   const expired = createOutcome({ chain: 'bsc', address, baselineAt: 0, baselinePrice: 1 });
   assert.deepEqual(updateOutcomeTracking([expired], new Map(), 8 * DAY, 7 * DAY), []);
+});
+
+test('outcome processing skips malformed persisted rows without losing valid history', () => {
+  const now = 1_800_000_000_000;
+  const valid = createOutcome({
+    chain: 'bsc', address, baselineAt: now - 31 * 60_000, baselinePrice: 1,
+    initialDecision: 'X_REVIEW', samples: {}
+  });
+  const rows = [null, undefined, 'bad-row', valid];
+  assert.doesNotThrow(() => dueOutcomeJobs(rows, now));
+  const jobs = dueOutcomeJobs(rows, now);
+  assert.ok(jobs.length > 0);
+  assert.ok(jobs.every(job => job.row === valid));
+  assert.equal(outcomeCoverage(rows, now).passed.m30.eligible, 1);
+  assert.equal(confirmedCreatorOutcome(null), null);
+  assert.equal(recordConfirmedCreatorOutcomes(new CreatorReputation(), rows), 0);
+  assert.doesNotThrow(() => summarizeOutcomes(rows));
 });
 
 test('outcome API separates observed results, path risk, and sample coverage without marking incomplete paths complete', () => {

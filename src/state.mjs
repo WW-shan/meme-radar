@@ -9,6 +9,40 @@ function cleanCandidate(candidate) {
   return clean;
 }
 
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function objectRows(value) {
+  return Array.isArray(value)
+    ? value.filter(row => row && typeof row === 'object' && !Array.isArray(row))
+    : [];
+}
+
+function cleanCandidates(value) {
+  return objectRows(value).map(cleanCandidate).filter(Boolean);
+}
+
+function normalizeScope(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    ...value,
+    candidates: cleanCandidates(value.candidates),
+    rejected: objectRows(value.rejected),
+    auditQueue: objectRows(value.auditQueue),
+    outcomes: objectRows(value.outcomes),
+    events: objectRows(value.events),
+    lifecycle: objectRows(value.lifecycle),
+    auditQueueStats: objectValue(value.auditQueueStats),
+    sourceHealth: objectValue(value.sourceHealth),
+    outcomeSummary: objectValue(value.outcomeSummary)
+  };
+}
+
+function normalizeChainStates(value) {
+  return Object.fromEntries(Object.entries(objectValue(value)).map(([chain, scope]) => [chain, normalizeScope(scope)]).filter(([, scope]) => scope));
+}
+
 function defaultState() {
   return {
     version: 4,
@@ -49,21 +83,19 @@ function defaultState() {
 function migrateState(raw) {
   const base = defaultState();
   if (!raw || typeof raw !== 'object') return base;
-  const memory = new RiskMemory(
-    Array.isArray(raw.riskMemory) && raw.riskMemory.length ? raw.riskMemory : raw.riskExclusions || {}
-  );
+  let memory = new RiskMemory(raw.riskMemory || []);
+  if (!memory.rows.length) memory = new RiskMemory(raw.riskExclusions || {});
+  const normalized = normalizeScope(raw) || {};
   return {
     ...base,
     ...raw,
+    ...normalized,
     version: 4,
     riskMemory: memory.serialize(),
     riskExclusions: memory.toObject(Date.now()),
     scanInProgress: false,
-    candidates: Array.isArray(raw.candidates) ? raw.candidates.map(cleanCandidate) : [],
-    rejected: Array.isArray(raw.rejected) ? raw.rejected : [],
-    auditQueue: Array.isArray(raw.auditQueue) ? raw.auditQueue : [],
-    outcomes: Array.isArray(raw.outcomes) ? raw.outcomes : [],
-    events: Array.isArray(raw.events) ? raw.events : []
+    chainStates: normalizeChainStates(raw.chainStates),
+    creatorHistory: objectRows(raw.creatorHistory)
   };
 }
 

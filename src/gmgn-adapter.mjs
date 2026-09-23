@@ -1,5 +1,7 @@
 const STAGES = new Set(['new_creation', 'near_completion', 'completed']);
 const SIGNAL_TYPES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21]);
+export const GMGN_SIGNAL_CHAINS = Object.freeze(['sol', 'bsc', 'robinhood', 'arc', 'stable']);
+const SIGNAL_CHAINS = new Set(GMGN_SIGNAL_CHAINS);
 export const GMGN_ADAPTER_INCOMPATIBLE = 'GMGN_ADAPTER_INCOMPATIBLE';
 export const GMGN_ADAPTER_OK = 'GMGN_ADAPTER_OK';
 export const GMGN_SUPPORTED_CLIENT_VERSION = '1.5.7';
@@ -163,6 +165,7 @@ export class GmgnAdapter {
   }
 
   async signals(chain, signalTypes, limit = 50) {
+    if (!SIGNAL_CHAINS.has(chain)) throw new Error('invalid signal chain');
     if (!Array.isArray(signalTypes) || !signalTypes.length || signalTypes.some(type => !SIGNAL_TYPES.has(type))) {
       throw new Error('invalid signal types');
     }

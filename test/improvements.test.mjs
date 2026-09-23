@@ -23,6 +23,7 @@ const temp = t => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-v3-
 test('weighted request pacing, bounded cache and credential invalidation', async () => {
   assert.equal(requestWeight(['token','holders']), 5);
   assert.equal(requestWeight(['market','trenches']), 3);
+  assert.equal(requestWeight(['market','signal']), 3);
   const client = new GmgnClient();
   let calls = 0;
   client.run = async () => ({ count: ++calls });
@@ -204,4 +205,23 @@ test('malformed local preferences fall back to safe scan and annotation state', 
   const controls = new RadarControls(directory, ['sol', 'bsc'], 'bsc');
   assert.deepEqual(controls.value.enabledChains, ['bsc']);
   assert.deepEqual(controls.value.annotations, {});
+});
+
+test('dirty persisted annotations are discarded while valid favorites survive reload', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-preferences-dirty-annotations-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const solAddress = 'So11111111111111111111111111111111111111112';
+  const bscAddress = '0x' + '1'.repeat(40);
+  fs.writeFileSync(path.join(directory, 'preferences.json'), JSON.stringify({
+    enabledChains: ['sol', 'bsc'],
+    annotations: {
+      broken: null,
+      wrongChain: { chain: 'unknown', address: bscAddress, favorite: true, note: 'wrong' },
+      spoofedKey: { chain: 'sol', address: solAddress, favorite: true, note: 'keep' }
+    }
+  }));
+  const controls = new RadarControls(directory, config.supportedChains, 'sol');
+  assert.deepEqual(Object.keys(controls.value.annotations), [tokenKey('sol', solAddress)]);
+  assert.equal(controls.value.annotations[tokenKey('sol', solAddress)].note, 'keep');
+  assert.doesNotThrow(() => controls.annotate({ chain: 'bsc', address: bscAddress, favorite: true, note: 'new' }));
 });

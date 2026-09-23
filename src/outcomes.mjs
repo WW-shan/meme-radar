@@ -218,7 +218,9 @@ export function sampleRejected(outcomes, candidate, now) {
 }
 
 export function dueOutcomeJobs(outcomes, now) {
-  return outcomes.flatMap(row => Object.entries(horizons).filter(([key, duration]) =>
+  return (Array.isArray(outcomes) ? outcomes : [])
+    .filter(row => row && typeof row === 'object')
+    .flatMap(row => Object.entries(horizons).filter(([key, duration]) =>
     !row.samples?.[key] && now >= row.baselineAt + duration + 60_000
     && now >= (row.sampleRetries?.[key]?.nextAt || 0)
   ).map(([key, duration]) => ({ row, key, targetAt: row.baselineAt + duration })))
@@ -273,7 +275,7 @@ export async function collectOutcomeSamples(outcomes, gmgn, chain, { limit = 4, 
 
 export function outcomeCoverage(outcomes, now = Date.now()) {
   const cohort = decision => {
-    const rows = outcomes.filter(row => row.initialDecision === decision);
+    const rows = (Array.isArray(outcomes) ? outcomes : []).filter(row => row && typeof row === 'object' && row.initialDecision === decision);
     return Object.fromEntries(Object.entries(horizons).map(([key, duration]) => {
       const eligible = rows.filter(row => now >= row.baselineAt + duration);
       const samples = eligible.map(row => row.samples?.[key])
@@ -294,6 +296,7 @@ export function outcomeCoverage(outcomes, now = Date.now()) {
 }
 
 export function confirmedCreatorOutcome(row = {}) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const creator = String(row.creatorAddress || '').trim();
   const chain = String(row.chain || '').toLowerCase();
   const token = String(row.address || '').trim();
